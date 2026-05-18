@@ -1,0 +1,13 @@
+{
+  "name": "grid_nonrect_buildings",
+  "expected": {
+    "global": {
+      "gridness": "high"
+    }
+  },
+  "notes": "L/T/+ shapes placed on a grid; layout high, shape mid",
+  "shape": [
+    200,
+    200
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "grid_variable_rows",
+  "expected": {
+    "global": {
+      "gridness": "high"
+    }
+  },
+  "notes": "rows and cols have varying widths/heights; still grid",
+  "shape": [
+    200,
+    200
+  ]
+}

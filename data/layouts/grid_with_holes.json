@@ -1,0 +1,13 @@
+{
+  "name": "grid_with_holes",
+  "expected": {
+    "global": {
+      "gridness": "high"
+    }
+  },
+  "notes": "uniform grid with ~18% buildings randomly removed",
+  "shape": [
+    200,
+    200
+  ]
+}

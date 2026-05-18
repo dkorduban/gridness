@@ -1,0 +1,14 @@
+{
+  "name": "row_only",
+  "expected": {
+    "global": {
+      "gridness": "medium",
+      "rowness": "high"
+    }
+  },
+  "notes": "strong horizontal rows, jittered column positions",
+  "shape": [
+    200,
+    200
+  ]
+}

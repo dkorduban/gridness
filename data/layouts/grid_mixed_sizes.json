@@ -1,0 +1,13 @@
+{
+  "name": "grid_mixed_sizes",
+  "expected": {
+    "global": {
+      "gridness": "high"
+    }
+  },
+  "notes": "1x1/2x1/1x2/2x2 blocks on shared 16-period grid",
+  "shape": [
+    200,
+    200
+  ]
+}

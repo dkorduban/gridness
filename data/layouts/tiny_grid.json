@@ -1,0 +1,14 @@
+{
+  "name": "tiny_grid",
+  "expected": {
+    "global": {
+      "gridness": "medium",
+      "low_evidence": true
+    }
+  },
+  "notes": "only 4 buildings; should produce low-confidence scores",
+  "shape": [
+    200,
+    200
+  ]
+}

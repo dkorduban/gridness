@@ -1,0 +1,30 @@
+{
+  "name": "mixed_regions",
+  "expected": {
+    "regions": [
+      {
+        "bbox": [
+          0,
+          0,
+          100,
+          200
+        ],
+        "gridness": "high"
+      },
+      {
+        "bbox": [
+          100,
+          0,
+          100,
+          200
+        ],
+        "gridness": "low"
+      }
+    ]
+  },
+  "notes": "left half grid, right half organic",
+  "shape": [
+    200,
+    200
+  ]
+}

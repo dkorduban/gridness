@@ -1,0 +1,13 @@
+{
+  "name": "grid_rotated_30",
+  "expected": {
+    "global": {
+      "gridness": "high"
+    }
+  },
+  "notes": "12x12 buildings on a perfect grid rotated 30 degrees",
+  "shape": [
+    200,
+    200
+  ]
+}

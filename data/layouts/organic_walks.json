@@ -1,0 +1,13 @@
+{
+  "name": "organic_walks",
+  "expected": {
+    "global": {
+      "gridness": "low"
+    }
+  },
+  "notes": "irregular polygons at random positions (n=50); layout low",
+  "shape": [
+    200,
+    200
+  ]
+}

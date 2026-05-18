@@ -1,0 +1,13 @@
+{
+  "name": "grid_uniform",
+  "expected": {
+    "global": {
+      "gridness": "high"
+    }
+  },
+  "notes": "axis-aligned 12x12 buildings on 16-period grid",
+  "shape": [
+    200,
+    200
+  ]
+}

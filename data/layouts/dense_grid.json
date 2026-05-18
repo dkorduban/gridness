@@ -1,0 +1,13 @@
+{
+  "name": "dense_grid",
+  "expected": {
+    "global": {
+      "gridness": "high"
+    }
+  },
+  "notes": "many tiny 6x6 buildings on tight grid",
+  "shape": [
+    200,
+    200
+  ]
+}

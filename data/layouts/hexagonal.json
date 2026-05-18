@@ -1,0 +1,13 @@
+{
+  "name": "hexagonal",
+  "expected": {
+    "global": {
+      "gridness": "medium"
+    }
+  },
+  "notes": "hex-packed centers; should be partially grid-like",
+  "shape": [
+    200,
+    200
+  ]
+}

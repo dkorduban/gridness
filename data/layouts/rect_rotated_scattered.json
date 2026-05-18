@@ -1,0 +1,13 @@
+{
+  "name": "rect_rotated_scattered",
+  "expected": {
+    "global": {
+      "gridness": "low"
+    }
+  },
+  "notes": "perfect rectangles at random angles & positions (n=40); layout low",
+  "shape": [
+    200,
+    200
+  ]
+}

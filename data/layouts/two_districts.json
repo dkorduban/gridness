@@ -1,0 +1,30 @@
+{
+  "name": "two_districts",
+  "expected": {
+    "regions": [
+      {
+        "bbox": [
+          0,
+          0,
+          100,
+          200
+        ],
+        "gridness": "high"
+      },
+      {
+        "bbox": [
+          100,
+          0,
+          100,
+          200
+        ],
+        "gridness": "high"
+      }
+    ]
+  },
+  "notes": "two grids at different angles meeting in middle",
+  "shape": [
+    200,
+    200
+  ]
+}

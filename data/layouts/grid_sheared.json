@@ -1,0 +1,13 @@
+{
+  "name": "grid_sheared",
+  "expected": {
+    "global": {
+      "gridness": "high"
+    }
+  },
+  "notes": "sheared parallelogram grid; 12x12 sheared buildings",
+  "shape": [
+    200,
+    200
+  ]
+}

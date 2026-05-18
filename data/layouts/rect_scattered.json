@@ -1,0 +1,13 @@
+{
+  "name": "rect_scattered",
+  "expected": {
+    "global": {
+      "gridness": "low"
+    }
+  },
+  "notes": "rectangular buildings randomly placed (n=60); layout low",
+  "shape": [
+    200,
+    200
+  ]
+}
