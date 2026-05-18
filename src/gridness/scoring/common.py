@@ -97,3 +97,53 @@ def coordinate_cluster_score(values: np.ndarray, weights: np.ndarray, building_i
 
 def gaussian_weights(distances: np.ndarray, sigma: float) -> np.ndarray:
     return np.exp(-(distances ** 2) / (2.0 * sigma ** 2))
+
+
+def cluster_and_score_fast(values: np.ndarray, weights: np.ndarray, bids: np.ndarray,
+                           tau: float, min_distinct: int, required_clusters: int
+                           ) -> tuple[float, int, np.ndarray]:
+    """Cluster 1D values then return (score, valid_cluster_count, valid_cluster_centers).
+
+    Fully vectorized — no per-cluster Python loop.
+    """
+    n = values.size
+    if n == 0:
+        return 0.0, 0, np.zeros(0)
+    order = np.argsort(values, kind="stable")
+    v = values[order]; w = weights[order]; b = bids[order]
+    if n == 1:
+        cluster_id = np.zeros(1, dtype=np.int32)
+    else:
+        gaps = (np.diff(v) > tau).astype(np.int32)
+        cluster_id = np.concatenate(([0], np.cumsum(gaps))).astype(np.int32)
+    n_clusters = int(cluster_id[-1]) + 1
+    w_sum = np.bincount(cluster_id, weights=w, minlength=n_clusters)
+    wv_sum = np.bincount(cluster_id, weights=w * v, minlength=n_clusters)
+    centers = wv_sum / np.maximum(w_sum, 1e-9)
+    diffs = np.abs(v - centers[cluster_id])
+    residual_sum = np.bincount(cluster_id, weights=w * diffs, minlength=n_clusters)
+
+    # distinct bids per cluster: vectorized via composite key sort
+    b_int = b.astype(np.int64)
+    max_b = int(b_int.max()) + 1
+    key = cluster_id.astype(np.int64) * max_b + b_int
+    sk = np.sort(key, kind="stable")
+    sk_cid = (sk // max_b).astype(np.int64)
+    is_new = np.empty(n, dtype=bool)
+    is_new[0] = True
+    if n > 1:
+        is_new[1:] = sk[1:] != sk[:-1]
+    distinct = np.bincount(sk_cid[is_new].astype(np.int32), minlength=n_clusters)
+
+    valid = distinct >= min_distinct
+    if not valid.any():
+        return 0.0, 0, np.zeros(0)
+    valid_w = float(w_sum[valid].sum())
+    total_w = float(w.sum())
+    explained_mass = valid_w / max(total_w, 1e-9)
+    valid_count = int(valid.sum())
+    cluster_count_score = min(valid_count / required_clusters, 1.0)
+    avg_residual = float(residual_sum[valid].sum() / max(valid_w, 1e-9))
+    tightness = max(0.0, 1.0 - avg_residual / tau)
+    score = float(explained_mass * cluster_count_score * tightness)
+    return score, valid_count, centers[valid]

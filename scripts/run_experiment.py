@@ -8,10 +8,12 @@ from pathlib import Path
 from gridness.eval import run_experiment
 from gridness.scoring.common import V1Params
 from gridness.scoring.v1_axis import score_map_v1
+from gridness.scoring.v2_affine import V2Params, score_map_v2
 
 
 ALGOS = {
     "v1": (score_map_v1, V1Params),
+    "v2": (score_map_v2, V2Params),
 }
 
 
