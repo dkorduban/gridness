@@ -1,0 +1,18 @@
+[project]
+name = "gridness"
+version = "0.1.0"
+description = "Gridness — scoring algorithms for city layout regularity (Song of Syx)"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.10.9",
+    "numpy>=2.4.5",
+    "scikit-image>=0.26.0",
+    "scipy>=1.17.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gridness"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

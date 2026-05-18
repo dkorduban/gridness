@@ -1,0 +1,15 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Experiment outputs are reproducible from code + git SHA, no need to commit them.
+# Keep experiments/log.jsonl in git but ignore the per-run artifact directories.
+experiments/*/
+!experiments/.gitkeep
