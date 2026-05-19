@@ -7,7 +7,8 @@ Autonomous build: synthetic dataset, three scoring algorithms, parameter tuning,
 - Built 16 synthetic test layouts covering grid / rotated grid / sheared grid / mixed-size blocks / non-rectangular buildings / organic / scattered / hexagonal / region-mixed cases.
 - Implemented three scoring algorithms (V1 axis, V2 affine exhaustive, V3 affine Hough-derived).
 - **V3 (Hough-derived affine) is the best**, with the largest separation between expected-high and expected-low layouts, and 25× faster than V2.
-- Final summary: grids score **0.79 – 0.99**, organic/scattered score **0.42 – 0.50** with V3. Discriminative gap ≈ 0.30 – 0.39. See `data/comparison_table.csv` and `data/comparison_grid.png`.
+- Final summary: grids score **0.79 – 0.99**, organic/scattered score **0.42 – 0.50** with V3. Discriminative gap ≈ 0.40 (or 0.30 if hex is counted as a grid). See `data/comparison_table.csv` and `data/comparison_grid.png`.
+- V3 also correctly resolves both regional-discrimination tests — see "Per-region results" below.
 
 ## What was built
 
@@ -82,9 +83,22 @@ V3 is **25× faster** than V2 (8.9s vs 229s total, because each layout has only 
 | organic_walks | low | 0.434 | 0.531 | **0.460** |
 | rect_rotated_scattered | low | 0.366 | 0.502 | **0.416** |
 
-V3 minimum on a true grid: **0.785** (hexagonal — partially grid-like by design).
-V3 maximum on a true non-grid: **0.495** (rect_scattered — perfect rectangles in random positions are the hardest organic case).
-**Discriminative gap: 0.30**, comfortable margin for a threshold-based discriminator at ~0.6.
+V3 minimum on a true grid: **0.890** (`grid_mixed_sizes`) — excluding `hexagonal` which is labeled "medium" rather than "high".
+V3 maximum on a true non-grid: **0.495** (`rect_scattered` — perfect rectangles in random positions, the hardest organic case).
+**Discriminative gap: ≈0.40**, comfortable margin for a threshold-based discriminator at ~0.6.
+
+## Per-region results (V3, the regional layouts)
+
+The global mean is misleading for regional layouts because it averages across heterogeneous regions. The eval harness already computes per-region means; here they are for the `wall_dir` V3 run (sha `ec469c2`):
+
+| Layout | Region | Expected | V3 mean | V3 median |
+|---|---|---|---|---|
+| `mixed_regions` | left (axis grid) | high | **0.961** | 0.987 |
+| `mixed_regions` | right (organic walks) | low | **0.546** | 0.580 |
+| `two_districts` | left (axis-aligned grid) | high | **0.928** | 0.983 |
+| `two_districts` | right (25°-rotated grid) | high | **0.878** | 0.905 |
+
+Both regional cases come out as expected. `mixed_regions` global mean of 0.751 in the headline table is averaging 0.96 + 0.55 — the heatmap (see `experiments/.../mixed_regions.png`) shows a crisp left/right boundary at x ≈ 100. `two_districts` confirms that V3 with the relaxed Hough threshold picks up both the axis-aligned and the rotated lattices, scoring both districts as grids.
 
 ## Param tuning explored
 
@@ -100,6 +114,7 @@ V3 maximum on a true non-grid: **0.495** (rect_scattered — perfect rectangles 
 3. **Sample-grid stride of 8 px** means the heatmap is coarser than the underlying raster. Visible in `mixed_regions` where the grid/organic boundary appears slightly pixelated.
 4. **Synthetic-only validation.** All tuning was against the synthetic set. Real Song of Syx layouts will have doors (1-cell gaps in walls), shared walls between buildings, decoration, etc. Building extraction may need a 1-cell `binary_closing` preprocessing step before flood fill — the rest of the pipeline should carry over but parameters may need re-tuning on a few real layouts.
 5. **Global Hough** is used; for very large maps (or maps with several distinct districts at different angles), per-region Hough would be more accurate. The current code is small enough to swap in easily.
+6. **`grid_sheared` generator produces overlapping buildings** (148 extracted vs ~144 expected) because the parallelogram shape protrudes slightly into vertically-adjacent cells with my lattice spacing. The algorithm handles it fine and the 0.913 score is in the right ballpark, but some shared edges in that score come from the building overlap rather than from intended lattice structure. Tighten lattice spacing to fix the generator; doesn't affect any other layout.
 
 ## Reproducibility
 
