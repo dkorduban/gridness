@@ -1,0 +1,13 @@
+{
+  "name": "grid_rounded_corners",
+  "expected": {
+    "global": {
+      "gridness": "high"
+    }
+  },
+  "notes": "12x12 buildings with 1-cell corner cuts (SoS roundness-emitting shape) on regular 16-period grid",
+  "shape": [
+    200,
+    200
+  ]
+}

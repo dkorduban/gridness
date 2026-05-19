@@ -92,6 +92,20 @@ def plus_shape(H: int, W: int, cx: int, cy: int, arm_long: int, arm_short: int) 
     return m
 
 
+def corner_cut_rect(H: int, W: int, x: int, y: int, w: int, h: int, cut: int) -> np.ndarray:
+    """Rectangle with `cut`×`cut` cells removed from each of the 4 corners.
+
+    A "fake rounded rectangle" — the Song of Syx pattern that emits roundness.
+    """
+    m = filled_rect(H, W, x, y, w, h)
+    if cut > 0:
+        m &= ~filled_rect(H, W, x, y, cut, cut)              # top-left
+        m &= ~filled_rect(H, W, x + w - cut, y, cut, cut)        # top-right
+        m &= ~filled_rect(H, W, x, y + h - cut, cut, cut)        # bottom-left
+        m &= ~filled_rect(H, W, x + w - cut, y + h - cut, cut, cut)  # bottom-right
+    return m
+
+
 # ---------- layout descriptor ----------
 
 @dataclass
@@ -501,6 +515,106 @@ def L_organic_arrangement_rect_buildings(H=H_DEFAULT, W=W_DEFAULT, seed=0) -> La
                   notes=f"perfect rectangles at random angles & positions (n={placed}); layout low")
 
 
+def _grid_streets_regular(H: int, W: int, gap: int, name: str) -> Layout:
+    """Regular grid of 12x12 buildings with uniform street width `gap`."""
+    base = 12
+    period = base + gap
+    margin = 6
+    bs = []
+    y = margin
+    while y + base <= H - margin:
+        x = margin
+        while x + base <= W - margin:
+            bs.append(filled_rect(H, W, x, y, base, base))
+            x += period
+        y += period
+    return Layout(name, walls_from_buildings(bs, H, W),
+                  {"global": {"gridness": "high"}},
+                  notes=f"12x12 buildings on a regular grid; street width {gap}")
+
+
+def L_grid_streets_w1(H=H_DEFAULT, W=W_DEFAULT, seed=0) -> Layout:
+    return _grid_streets_regular(H, W, 1, "grid_streets_w1")
+
+
+def L_grid_streets_w2(H=H_DEFAULT, W=W_DEFAULT, seed=0) -> Layout:
+    return _grid_streets_regular(H, W, 2, "grid_streets_w2")
+
+
+def L_grid_streets_w3(H=H_DEFAULT, W=W_DEFAULT, seed=0) -> Layout:
+    return _grid_streets_regular(H, W, 3, "grid_streets_w3")
+
+
+def L_grid_streets_w4(H=H_DEFAULT, W=W_DEFAULT, seed=0) -> Layout:
+    return _grid_streets_regular(H, W, 4, "grid_streets_w4")
+
+
+def L_grid_streets_w5(H=H_DEFAULT, W=W_DEFAULT, seed=0) -> Layout:
+    return _grid_streets_regular(H, W, 5, "grid_streets_w5")
+
+
+def L_grid_streets_w6(H=H_DEFAULT, W=W_DEFAULT, seed=0) -> Layout:
+    return _grid_streets_regular(H, W, 6, "grid_streets_w6")
+
+
+def L_grid_streets_w7(H=H_DEFAULT, W=W_DEFAULT, seed=0) -> Layout:
+    return _grid_streets_regular(H, W, 7, "grid_streets_w7")
+
+
+def L_grid_streets_w8(H=H_DEFAULT, W=W_DEFAULT, seed=0) -> Layout:
+    return _grid_streets_regular(H, W, 8, "grid_streets_w8")
+
+
+def L_grid_streets_w9(H=H_DEFAULT, W=W_DEFAULT, seed=0) -> Layout:
+    return _grid_streets_regular(H, W, 9, "grid_streets_w9")
+
+
+def L_grid_streets_mixed(H=H_DEFAULT, W=W_DEFAULT, seed=0) -> Layout:
+    """12x12 buildings on a grid with each street independently widthed in [1, 7]."""
+    rng = np.random.default_rng(seed)
+    base = 12
+    margin = 4
+    col_offsets = []
+    x = margin
+    while x + base <= W - margin:
+        col_offsets.append(x)
+        gap = int(rng.integers(1, 8))
+        x += base + gap
+    row_offsets = []
+    y = margin
+    while y + base <= H - margin:
+        row_offsets.append(y)
+        gap = int(rng.integers(1, 8))
+        y += base + gap
+    bs = [filled_rect(H, W, x, y, base, base) for x in col_offsets for y in row_offsets]
+    return Layout("grid_streets_mixed", walls_from_buildings(bs, H, W),
+                  {"global": {"gridness": "high"}},
+                  notes="12x12 buildings; street widths drawn iid uniform in [1, 7]")
+
+
+def L_grid_rounded_corners(H=H_DEFAULT, W=W_DEFAULT, seed=0) -> Layout:
+    """Buildings with single-cell corner cuts (fake rounded rectangles) on a regular grid.
+
+    Per SoS convention, only 1 cell is cut from each corner — this is the standard
+    building shape players use to "emit roundness".
+    """
+    base, gap = 12, 4
+    period = base + gap
+    margin = 8
+    bs = []
+    y = margin
+    while y + base <= H - margin:
+        x = margin
+        while x + base <= W - margin:
+            bs.append(corner_cut_rect(H, W, x, y, base, base, 1))
+            x += period
+        y += period
+    return Layout("grid_rounded_corners", walls_from_buildings(bs, H, W),
+                  {"global": {"gridness": "high"}},
+                  notes="12x12 buildings with 1-cell corner cuts (SoS roundness-emitting "
+                        "shape) on regular 16-period grid")
+
+
 ALL_LAYOUTS: list[Callable[..., Layout]] = [
     L_grid_uniform,
     L_grid_mixed_sizes,
@@ -508,8 +622,18 @@ ALL_LAYOUTS: list[Callable[..., Layout]] = [
     L_grid_rotated_30,
     L_grid_sheared,
     L_grid_nonrect_buildings,
+    L_grid_streets_w1,
+    L_grid_streets_w2,
+    L_grid_streets_w3,
+    L_grid_streets_w4,
+    L_grid_streets_w5,
+    L_grid_streets_w6,
+    L_grid_streets_w7,
+    L_grid_streets_w8,
+    L_grid_streets_w9,
+    L_grid_streets_mixed,
+    L_grid_rounded_corners,
     L_rect_scattered,
-    L_rect_scattered,  # placeholder to be replaced
     L_organic_walks,
     L_hexagonal,
     L_mixed_regions,

@@ -1,0 +1,13 @@
+{
+  "name": "grid_streets_w4",
+  "expected": {
+    "global": {
+      "gridness": "high"
+    }
+  },
+  "notes": "12x12 buildings on a regular grid; street width 4",
+  "shape": [
+    200,
+    200
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "grid_streets_mixed",
+  "expected": {
+    "global": {
+      "gridness": "high"
+    }
+  },
+  "notes": "12x12 buildings; street widths drawn iid uniform in [1, 7]",
+  "shape": [
+    200,
+    200
+  ]
+}
