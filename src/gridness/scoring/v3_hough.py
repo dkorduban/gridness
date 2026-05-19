@@ -24,10 +24,11 @@ class V3Params:
     stride: int = 8
     min_buildings: int = 4
     # Hough
-    hough_n_peaks: int = 6           # top N angle peaks to use
+    hough_n_peaks: int = 8           # top N angle peaks to keep
     hough_min_distance_deg: float = 5.0
-    hough_theta_step_deg: float = 2.0  # resolution of angle search
-    hough_global: bool = True        # use raster-global Hough (fast) — set False for per-window
+    hough_theta_step_deg: float = 2.0
+    hough_threshold_frac: float = 0.05  # accept peaks >= frac * max(accum)
+    hough_min_peak_weight: float = 30.0  # absolute minimum to keep an angle bin
     # Frame validity
     min_angle_sin: float = 0.34       # reject frames with |sin angle| < this (i.e., > ~70deg from collinear)
     # Cluster
@@ -49,14 +50,17 @@ def _hough_angles(raster: np.ndarray, params: V3Params) -> np.ndarray:
     """Return array of dominant wall angles in radians, in [0, pi)."""
     thetas = np.deg2rad(np.arange(0.0, 180.0, params.hough_theta_step_deg))
     h, theta, d = hough_line(raster.astype(bool), theta=thetas)
+    if h.max() == 0:
+        return np.array([0.0, np.pi / 2])
+    threshold = max(params.hough_threshold_frac * float(h.max()), params.hough_min_peak_weight)
     accum, ang, dist = hough_line_peaks(
         h, theta, d,
-        num_peaks=params.hough_n_peaks * 4,  # over-fetch then dedupe by angle
+        num_peaks=params.hough_n_peaks * 6,
+        threshold=threshold,
         min_distance=max(1, int(params.hough_min_distance_deg / params.hough_theta_step_deg)),
     )
     if ang.size == 0:
         return np.array([0.0, np.pi / 2])
-    # Bin into angle clusters and keep top N strongest
     ang_mod = np.mod(ang, np.pi)
     accum_by_angle: dict = {}
     bin_size = np.deg2rad(params.hough_min_distance_deg)
@@ -71,22 +75,25 @@ def _hough_angles(raster: np.ndarray, params: V3Params) -> np.ndarray:
 
 
 def _build_frames_from_angles(angles: np.ndarray, params: V3Params) -> list[np.ndarray]:
-    """Build (a, b) frames from all pairs of angles where they're not parallel."""
+    """Build (a, b) frames from all pairs of wall directions.
+
+    `angles` are Hough NORMAL angles. We convert to WALL directions (perpendicular)
+    because in a frame [a | b], "u = const" lines are parallel to b — so to make those
+    lines align with walls we need b along a wall direction, not along a normal.
+    """
+    wall_dirs = angles + np.pi / 2  # convert normals to wall directions
     frames: list[np.ndarray] = []
     seen: set[tuple[int, int]] = set()
-    for i in range(len(angles)):
-        for j in range(len(angles)):
+    for i in range(len(wall_dirs)):
+        for j in range(len(wall_dirs)):
             if i == j:
                 continue
-            a_ang = angles[i]
-            b_ang = angles[j]
-            # canonicalize order
             key = (min(i, j), max(i, j))
             if key in seen:
                 continue
             seen.add(key)
-            a = np.array([np.cos(a_ang), np.sin(a_ang)])
-            b = np.array([np.cos(b_ang), np.sin(b_ang)])
+            a = np.array([np.cos(wall_dirs[i]), np.sin(wall_dirs[i])])
+            b = np.array([np.cos(wall_dirs[j]), np.sin(wall_dirs[j])])
             sin_ang = abs(a[0] * b[1] - a[1] * b[0])
             if sin_ang < params.min_angle_sin:
                 continue
