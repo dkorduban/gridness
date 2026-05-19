@@ -121,7 +121,10 @@ def run_experiment(algo_fn, params, dataset_dir: Path, out_dir: Path,
         t_layout = time.time()
         try:
             buildings = extract_buildings(raster)
-            result = algo_fn(buildings, raster.shape, params)
+            try:
+                result = algo_fn(buildings, raster.shape, params, raster=raster)
+            except TypeError:
+                result = algo_fn(buildings, raster.shape, params)
             stats = aggregate_stats(result, meta["expected"], raster.shape)
             regions = region_stats(result, meta["expected"])
             visualize_result(raster, buildings, result, meta["name"],
