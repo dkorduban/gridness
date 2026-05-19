@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import csv
 import json
-import subprocess
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.ndimage import binary_dilation
 
 from gridness.eval import git_sha
 from gridness.extract import extract_buildings
@@ -30,6 +30,46 @@ ALGOS = [
     ("V3 Hough", score_map_v3, V3Params(), True),
 ]
 
+# Display upscale: each raster pixel becomes UPSCALE x UPSCALE display pixels.
+# This is the key fix for "walls getting lost" at the small per-panel size.
+UPSCALE = 3
+PANEL_W = 3.2
+PANEL_H = 3.2
+DPI = 180
+# Thicken walls in the raster + boundary panels so single-pixel features survive.
+WALL_DILATE = 1
+
+
+def upscale_nearest(img: np.ndarray, k: int) -> np.ndarray:
+    """Block-replicate a 2D array by integer factor k. Preserves sharp edges."""
+    return np.repeat(np.repeat(img, k, axis=0), k, axis=1)
+
+
+def render_input(raster: np.ndarray) -> np.ndarray:
+    walls = raster.astype(bool)
+    if WALL_DILATE > 0:
+        walls = binary_dilation(walls, iterations=WALL_DILATE)
+    return upscale_nearest(walls.astype(np.uint8), UPSCALE)
+
+
+def render_buildings(raster: np.ndarray, buildings) -> np.ndarray:
+    H, W = raster.shape
+    walls = raster.astype(bool)
+    if WALL_DILATE > 0:
+        walls = binary_dilation(walls, iterations=WALL_DILATE)
+    boundary = np.zeros((H, W), dtype=bool)
+    for b in buildings:
+        ys = b.boundary_xy[:, 1].astype(int)
+        xs = b.boundary_xy[:, 0].astype(int)
+        m = (ys >= 0) & (ys < H) & (xs >= 0) & (xs < W)
+        boundary[ys[m], xs[m]] = True
+    if WALL_DILATE > 0:
+        boundary = binary_dilation(boundary, iterations=WALL_DILATE)
+    rgb = np.ones((H, W, 3), dtype=float)
+    rgb[walls] = [0.1, 0.1, 0.1]
+    rgb[boundary] = [0.95, 0.25, 0.25]
+    return upscale_nearest(rgb, UPSCALE)
+
 
 def main() -> None:
     sha = git_sha()
@@ -39,8 +79,9 @@ def main() -> None:
     layout_files = sorted(layouts_dir.glob("*.npy"))
 
     n_rows = len(layout_files)
-    n_cols = 2 + len(ALGOS)  # input + buildings + 3 algos
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(2.6 * n_cols, 2.2 * n_rows))
+    n_cols = 2 + len(ALGOS)
+    fig, axes = plt.subplots(n_rows, n_cols,
+                             figsize=(PANEL_W * n_cols, PANEL_H * n_rows))
 
     table = []
     for ri, p in enumerate(layout_files):
@@ -48,43 +89,44 @@ def main() -> None:
         raster = np.load(p)
         buildings = extract_buildings(raster)
         expected = meta["expected"].get("global", {}).get("gridness", "regional")
-        axes[ri, 0].imshow(raster, cmap="gray_r", interpolation="nearest")
-        axes[ri, 0].set_title(f"{meta['name']}\n(exp={expected}, n_b={len(buildings)})", fontsize=8)
+
+        axes[ri, 0].imshow(render_input(raster), cmap="gray_r", interpolation="nearest")
+        axes[ri, 0].set_title(f"{meta['name']}\n(exp={expected}, n_b={len(buildings)})", fontsize=10)
         axes[ri, 0].set_xticks([]); axes[ri, 0].set_yticks([])
 
-        # buildings overlay
-        rgb = np.stack([1 - raster, 1 - raster, 1 - raster], axis=-1).astype(float)
-        for b in buildings:
-            for x, y in b.boundary_xy:
-                xi, yi = int(x), int(y)
-                if 0 <= yi < raster.shape[0] and 0 <= xi < raster.shape[1]:
-                    rgb[yi, xi] = [1.0, 0.2, 0.2]
-        axes[ri, 1].imshow(np.clip(rgb, 0, 1))
-        axes[ri, 1].set_title("buildings", fontsize=8)
+        axes[ri, 1].imshow(render_buildings(raster, buildings), interpolation="nearest")
+        axes[ri, 1].set_title("extracted buildings", fontsize=10)
         axes[ri, 1].set_xticks([]); axes[ri, 1].set_yticks([])
 
         row = {"layout": meta["name"], "expected": expected, "n_buildings": len(buildings)}
         for ci, (name, fn, params, needs_raster) in enumerate(ALGOS):
             try:
-                result = fn(buildings, raster.shape, params, raster=raster) if needs_raster else fn(buildings, raster.shape, params)
+                result = (fn(buildings, raster.shape, params, raster=raster)
+                          if needs_raster else fn(buildings, raster.shape, params))
                 gridness_full = upsample_to_full(result["gridness"], raster.shape, result["stride"])
                 conf = upsample_to_full(result["confidence"], raster.shape, result["stride"])
                 mask = conf > (conf.max() * 0.1 if conf.max() > 0 else 0)
                 mean = float(gridness_full[mask].mean()) if mask.any() else 0.0
                 row[f"{name}_mean"] = round(mean, 3)
                 ax = axes[ri, 2 + ci]
-                im = ax.imshow(gridness_full, cmap="viridis", vmin=0, vmax=1)
-                ax.set_title(f"{name}\nmean={mean:.3f}", fontsize=8)
+                # Heatmaps stay at native resolution (block-replicated already); bilinear smooths.
+                ax.imshow(upscale_nearest(gridness_full, UPSCALE),
+                          cmap="viridis", vmin=0, vmax=1, interpolation="bilinear")
+                ax.set_title(f"{name}\nmean={mean:.3f}", fontsize=10)
                 ax.set_xticks([]); ax.set_yticks([])
-            except Exception as e:
+            except Exception:
                 row[f"{name}_mean"] = None
-                axes[ri, 2 + ci].set_title(f"{name}\nFAILED", fontsize=8)
+                axes[ri, 2 + ci].set_title(f"{name}\nFAILED", fontsize=10)
                 axes[ri, 2 + ci].axis("off")
         table.append(row)
 
-    fig.suptitle(f"Gridness comparison — V1 / V2 / V3 — sha={sha}", fontsize=12)
-    fig.tight_layout(rect=[0, 0, 1, 0.99])
-    fig.savefig(out_dir / "comparison_grid.png", dpi=110, bbox_inches="tight")
+    fig.tight_layout()
+    # tall figures: place title above all axes with figure.text rather than suptitle
+    top = 1.0 - (0.5 / (PANEL_H * n_rows))  # ~one half-panel inch above the grid
+    fig.text(0.5, top, f"Gridness comparison — V1 / V2 / V3 — sha={sha}",
+             ha="center", va="bottom", fontsize=16)
+    fig.subplots_adjust(top=1.0 - 1.0 / (PANEL_H * n_rows))
+    fig.savefig(out_dir / "comparison_grid.png", dpi=DPI, bbox_inches="tight")
     plt.close(fig)
 
     csv_path = out_dir / "comparison_table.csv"
