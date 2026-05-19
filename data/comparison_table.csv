@@ -1,0 +1,17 @@
+layout,expected,n_buildings,V1 axis_mean,V2 affine_mean,V3 Hough_mean
+dense_grid,high,576,0.971,0.98,0.983
+grid_mixed_sizes,high,61,0.794,0.808,0.89
+grid_nonrect_buildings,high,81,0.92,0.913,0.957
+grid_rotated_30,high,157,0.477,0.84,0.898
+grid_sheared,high,148,0.313,0.86,0.913
+grid_uniform,high,121,0.962,0.911,0.987
+grid_variable_rows,high,99,0.96,0.906,0.985
+grid_with_holes,high,99,0.949,0.893,0.966
+hexagonal,medium,149,0.811,0.885,0.785
+mixed_regions,regional,80,0.716,0.726,0.751
+organic_walks,low,50,0.434,0.531,0.46
+rect_rotated_scattered,low,40,0.366,0.502,0.416
+rect_scattered,low,60,0.42,0.576,0.495
+row_only,medium,84,0.709,0.742,0.783
+tiny_grid,medium,4,0.996,0.959,0.998
+two_districts,regional,130,0.824,0.841,0.902
