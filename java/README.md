@@ -35,8 +35,12 @@ java/
 source java/env.sh      # only if JDK 21 + gradle aren't on PATH
 cd java
 ./gradlew test
-./gradlew jmh           # full sweep, ~7-10 min
+./gradlew jmh           # full sweep, ~12 min
 ```
+
+See [BENCHMARK.md](BENCHMARK.md) for full sweep results and recommended
+defaults. TL;DR at `tileSize=32, radius=30, sampleStride=8` on 768×768:
+~20 ms from-scratch, ~0.6 ms single-pixel update.
 
 ## API at a glance
 

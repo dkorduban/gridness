@@ -74,8 +74,8 @@ public final class GridnessParams {
     public static GridnessParams defaults() { return new Builder().build(); }
 
     public static final class Builder {
-        private int tileSize = 64;
-        private int tileStride = 32;
+        private int tileSize = 32;
+        private int tileStride = 16;
         private int sampleStride = 8;
         private Interpolation interpolation = Interpolation.BILINEAR;
         private double radius = 30.0;
