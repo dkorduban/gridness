@@ -22,7 +22,7 @@ public final class GridnessParams {
     public final double clusterTolerance;
     public final int minDistinctBuildings;
     public final int requiredLinesPerAxis;
-    public final int minBuildingsInTile;
+    public final int minBuildingsInWindow;
     public final int minBuildingArea;
 
     public final double shapeFloor;
@@ -46,7 +46,7 @@ public final class GridnessParams {
         this.clusterTolerance = b.clusterTolerance;
         this.minDistinctBuildings = b.minDistinctBuildings;
         this.requiredLinesPerAxis = b.requiredLinesPerAxis;
-        this.minBuildingsInTile = b.minBuildingsInTile;
+        this.minBuildingsInWindow = b.minBuildingsInWindow;
         this.minBuildingArea = b.minBuildingArea;
         this.shapeFloor = b.shapeFloor;
         this.shapeWeight = b.shapeWeight;
@@ -84,14 +84,16 @@ public final class GridnessParams {
         private int houghThetaSteps = 90;
         private int houghNumPeaks = 8;
         private double houghThresholdFrac = 0.05;
-        private double houghMinPeakWeight = 30.0;
+        // 5 votes is fine for a tile-sized Hough; the relative-fraction threshold
+        // (5% of the peak) prevents picking up noise on its own.
+        private double houghMinPeakWeight = 5.0;
         private double houghMinAngleSepDeg = 5.0;
 
         private double minAngleSin = 0.34;
         private double clusterTolerance = 2.5;
         private int minDistinctBuildings = 2;
         private int requiredLinesPerAxis = 3;
-        private int minBuildingsInTile = 4;
+        private int minBuildingsInWindow = 4;
         private int minBuildingArea = 4;
 
         private double shapeFloor = 0.85;
@@ -114,7 +116,7 @@ public final class GridnessParams {
         public Builder clusterTolerance(double v) { this.clusterTolerance = v; return this; }
         public Builder minDistinctBuildings(int v) { this.minDistinctBuildings = v; return this; }
         public Builder requiredLinesPerAxis(int v) { this.requiredLinesPerAxis = v; return this; }
-        public Builder minBuildingsInTile(int v) { this.minBuildingsInTile = v; return this; }
+        public Builder minBuildingsInWindow(int v) { this.minBuildingsInWindow = v; return this; }
         public Builder minBuildingArea(int v) { this.minBuildingArea = v; return this; }
         public Builder shapeFloor(double v) { this.shapeFloor = v; return this; }
         public Builder shapeWeight(double v) { this.shapeWeight = v; return this; }

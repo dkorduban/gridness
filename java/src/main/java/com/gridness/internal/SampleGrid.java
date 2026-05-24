@@ -147,7 +147,7 @@ public final class SampleGrid {
             }
         }
 
-        if (selected.size() < p.minBuildingsInTile) {
+        if (selected.size() < p.minBuildingsInWindow) {
             scores[sampleIdx] = 0.0;
             return;
         }

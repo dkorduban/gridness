@@ -19,7 +19,7 @@ public final class FrameScorer {
         int n = buildings.size();
         if (n != perBuildingWeight.length)
             throw new IllegalArgumentException("buildings/weights length mismatch");
-        if (n < p.minBuildingsInTile) return 0.0;
+        if (n < p.minBuildingsInWindow) return 0.0;
         if (wallNormals.length == 0) return 0.0;
 
         double weightSum = 0.0;

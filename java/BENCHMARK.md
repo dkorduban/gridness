@@ -55,9 +55,10 @@ box, common ForkJoin pool for tile + sample parallelism. Times in **ms/op**.
    recommended (radius=30, sampleStride=8) config. tile=64 sits in between.
 
 2. **Why**: with a 128-px tile, each sample inside a tile's R-window has to
-   scan the tile's full building list (≈140 buildings for a 12-period grid in
-   a 128² tile) to filter to the ~28 within R. With 32-px tiles, only ~9
-   buildings per tile, so the per-sample candidate gather is ~7× cheaper. The
+   scan the tile's full building list (~49 buildings for a 12-period grid in
+   a 128² tile) to filter to the ~28 within R. With 32-px tiles, only ~4-9
+   buildings per tile, so the per-sample candidate gather is several times
+   cheaper. The
    extra tiles (576 vs 49) cost more Hough work, but Hough is O(walls × θ)
    which scales linearly with area regardless of tile partitioning, so the
    total Hough budget is the same — the win is on the per-sample side.

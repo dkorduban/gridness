@@ -61,6 +61,16 @@ class GridnessTest {
     }
 
     @Test
+    void defaultParamsScoreGridHigh() {
+        // Locks in the "recommended default" path used by GridnessParams.defaults().
+        int W = 256, H = 256;
+        Gridness g = new Gridness(W, H, GridnessParams.defaults());
+        g.loadFromField(regularGrid(H, W, 12, 4, 8));
+        double mean = meanOverGrid(g);
+        assertTrue(mean > 0.75, "defaults() grid mean=" + mean + ", expected > 0.75");
+    }
+
+    @Test
     void uniformGridScoresHigh() {
         int W = 256, H = 256;
         boolean[][] field = regularGrid(H, W, 12, 4, 8);
