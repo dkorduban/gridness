@@ -142,6 +142,52 @@ class GridnessTest {
     }
 
     @Test
+    void megaBuildingProducesNonZeroScore() {
+        // A single 100x100 hollow rectangle is bigger than 2*extractionPad in every
+        // axis. Previously this disappeared entirely (no tile fully encloses it,
+        // exterior flood-fill leaked from the tile boundary). With the global
+        // exterior bitmap, each tile that overlaps the building's perimeter
+        // extracts its truncated piece, so samples near it see *something*.
+        int W = 256, H = 256;
+        boolean[][] field = new boolean[H][W];
+        int x0 = 70, y0 = 70, size = 100;
+        // Outer hollow rect.
+        for (int x = x0; x < x0 + size; x++) { field[y0][x] = true; field[y0 + size - 1][x] = true; }
+        for (int y = y0; y < y0 + size; y++) { field[y][x0] = true; field[y][x0 + size - 1] = true; }
+        // Add 8 normal-sized buildings inside so the megabuilding is in a city.
+        addHollow(field, x0 + 10, y0 + 10, 12, 12);
+        addHollow(field, x0 + 30, y0 + 10, 12, 12);
+        addHollow(field, x0 + 50, y0 + 10, 12, 12);
+        addHollow(field, x0 + 70, y0 + 10, 12, 12);
+        addHollow(field, x0 + 10, y0 + 78, 12, 12);
+        addHollow(field, x0 + 30, y0 + 78, 12, 12);
+        addHollow(field, x0 + 50, y0 + 78, 12, 12);
+        addHollow(field, x0 + 70, y0 + 78, 12, 12);
+
+        Gridness g = new Gridness(W, H, GridnessParams.defaults());
+        g.loadFromField(field);
+        // Sample a small box around the megabuilding center: previously this would
+        // have been 0; now it should be > 0 because each tile sees a truncated
+        // piece.
+        double[][] out = g.readRect(x0 + 40, y0 + 40, x0 + 60, y0 + 60);
+        double max = 0;
+        for (double[] row : out) for (double v : row) max = Math.max(max, v);
+        assertTrue(max > 0.0, "megabuilding center max=" + max + ", expected > 0");
+    }
+
+    private static void addHollow(boolean[][] field, int x0, int y0, int w, int h) {
+        int H = field.length, W = field[0].length;
+        for (int x = x0; x < x0 + w; x++) {
+            if (y0 >= 0 && y0 < H && x >= 0 && x < W) field[y0][x] = true;
+            if (y0 + h - 1 >= 0 && y0 + h - 1 < H && x >= 0 && x < W) field[y0 + h - 1][x] = true;
+        }
+        for (int y = y0; y < y0 + h; y++) {
+            if (x0 >= 0 && x0 < W && y >= 0 && y < H) field[y][x0] = true;
+            if (x0 + w - 1 >= 0 && x0 + w - 1 < W && y >= 0 && y < H) field[y][x0 + w - 1] = true;
+        }
+    }
+
+    @Test
     void heatmapIsSmooth() {
         // On a uniform grid the smooth heatmap should change gradually between
         // adjacent samples. Discrete tile-discontinuities would show up as big

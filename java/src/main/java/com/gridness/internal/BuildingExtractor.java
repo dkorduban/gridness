@@ -22,27 +22,50 @@ public final class BuildingExtractor {
 
     private BuildingExtractor() { }
 
-    public static List<Building> extract(boolean[] walls, int W, int H, int minArea) {
+    /**
+     * Extract buildings using {@code exteriorSeeds} to mark which empty cells
+     * are globally exterior. Empty cells not reachable from those seeds
+     * (through 4-connected empty neighbors) form buildings — including
+     * components truncated by the tile-boundary cut, which lets huge buildings
+     * be extracted as a piece per tile rather than disappearing.
+     *
+     * @param exteriorSeeds  same length as walls; true = this empty cell is
+     *                       globally exterior (and seeds the exterior flood).
+     *                       Pass null to fall back to "seed from any empty cell
+     *                       on the rect border" (legacy behavior, useful for
+     *                       BuildingExtractor unit tests on isolated rasters).
+     */
+    public static List<Building> extract(boolean[] walls, boolean[] exteriorSeeds,
+                                          int W, int H, int minArea) {
         int[] label = new int[W * H];
         int[] queue = new int[W * H];
-
-        // 1. Flood the exterior (any empty cell on the rect border).
         int qHead = 0, qTail = 0;
-        for (int x = 0; x < W; x++) {
-            if (!walls[x] && label[x] == UNVISITED) { label[x] = EXTERIOR; queue[qTail++] = x; }
-            int idxBottom = (H - 1) * W + x;
-            if (!walls[idxBottom] && label[idxBottom] == UNVISITED) {
-                label[idxBottom] = EXTERIOR; queue[qTail++] = idxBottom;
+
+        if (exteriorSeeds != null) {
+            for (int i = 0; i < W * H; i++) {
+                if (exteriorSeeds[i] && !walls[i] && label[i] == UNVISITED) {
+                    label[i] = EXTERIOR;
+                    queue[qTail++] = i;
+                }
             }
-        }
-        for (int y = 0; y < H; y++) {
-            int idxLeft = y * W;
-            if (!walls[idxLeft] && label[idxLeft] == UNVISITED) {
-                label[idxLeft] = EXTERIOR; queue[qTail++] = idxLeft;
+        } else {
+            // Legacy: seed from every empty cell on the rect border.
+            for (int x = 0; x < W; x++) {
+                if (!walls[x] && label[x] == UNVISITED) { label[x] = EXTERIOR; queue[qTail++] = x; }
+                int idxBottom = (H - 1) * W + x;
+                if (!walls[idxBottom] && label[idxBottom] == UNVISITED) {
+                    label[idxBottom] = EXTERIOR; queue[qTail++] = idxBottom;
+                }
             }
-            int idxRight = y * W + (W - 1);
-            if (!walls[idxRight] && label[idxRight] == UNVISITED) {
-                label[idxRight] = EXTERIOR; queue[qTail++] = idxRight;
+            for (int y = 0; y < H; y++) {
+                int idxLeft = y * W;
+                if (!walls[idxLeft] && label[idxLeft] == UNVISITED) {
+                    label[idxLeft] = EXTERIOR; queue[qTail++] = idxLeft;
+                }
+                int idxRight = y * W + (W - 1);
+                if (!walls[idxRight] && label[idxRight] == UNVISITED) {
+                    label[idxRight] = EXTERIOR; queue[qTail++] = idxRight;
+                }
             }
         }
         while (qHead < qTail) {

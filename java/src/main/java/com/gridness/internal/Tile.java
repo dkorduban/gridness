@@ -41,14 +41,17 @@ public final class Tile {
      * Recompute buildings + Hough angles from the current wall grid.
      * Buildings get GLOBAL coordinates.
      */
-    public void recompute(WallGrid walls, HoughDetector hough, GridnessParams params) {
+    public void recompute(WallGrid walls, ExteriorBitmap exterior,
+                          HoughDetector hough, GridnessParams params) {
         final int pad = params.extractionPad;
         int rectW = size + 2 * pad;
         int rectH = size + 2 * pad;
         boolean[] localWalls = new boolean[rectW * rectH];
         walls.copyRect(originX - pad, originY - pad, rectW, rectH, localWalls);
+        boolean[] localExterior = new boolean[rectW * rectH];
+        exterior.copyRect(originX - pad, originY - pad, rectW, rectH, localExterior);
 
-        List<Building> allBuildings = BuildingExtractor.extract(localWalls, rectW, rectH, params.minBuildingArea);
+        List<Building> allBuildings = BuildingExtractor.extract(localWalls, localExterior, rectW, rectH, params.minBuildingArea);
         List<Building> kept = new ArrayList<>(allBuildings.size());
         int outId = 0;
         for (Building b : allBuildings) {

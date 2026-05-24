@@ -1,5 +1,6 @@
 package com.gridness;
 
+import com.gridness.internal.ExteriorBitmap;
 import com.gridness.internal.HoughDetector;
 import com.gridness.internal.SampleGrid;
 import com.gridness.internal.Tile;
@@ -33,6 +34,8 @@ public final class Gridness {
 
     private final HoughDetector hough;
     private final SampleGrid samples;
+    private final ExteriorBitmap exterior;
+    private boolean exteriorDirty = true;
 
     public Gridness(int width, int height, GridnessParams params) {
         if (width <= 0 || height <= 0)
@@ -54,6 +57,7 @@ public final class Gridness {
         }
         this.hough = new HoughDetector(params.houghThetaSteps);
         this.samples = new SampleGrid(width, height, params.sampleStride, tileGrid);
+        this.exterior = new ExteriorBitmap(width, height);
     }
 
     public int width() { return width; }
@@ -72,6 +76,7 @@ public final class Gridness {
         if (prev != value) {
             markTilesAndSamplesAffected(x, y);
             anyTileDirty = true;
+            exteriorDirty = true;
         }
     }
 
@@ -146,7 +151,10 @@ public final class Gridness {
                 changed = true;
             }
         }
-        if (changed) anyTileDirty = true;
+        if (changed) {
+            anyTileDirty = true;
+            exteriorDirty = true;
+        }
     }
 
     public void loadFromField(boolean[][] field) {
@@ -154,6 +162,7 @@ public final class Gridness {
         Arrays.fill(tileDirty, true);
         anyTileDirty = true;
         samples.markAllDirty();
+        exteriorDirty = true;
     }
 
     // ---------------- read ----------------
@@ -231,6 +240,10 @@ public final class Gridness {
     // ---------------- recompute pipeline ----------------
 
     private void ensureClean() {
+        if (exteriorDirty) {
+            exterior.recompute(walls);
+            exteriorDirty = false;
+        }
         if (anyTileDirty) recomputeDirtyTiles();
         if (samples.anyDirty()) recomputeDirtySamples();
     }
@@ -245,10 +258,10 @@ public final class Gridness {
         if (params.parallel && dn > 1) {
             final int dnF = dn;
             ForkJoinPool.commonPool().submit(() -> IntStream.range(0, dnF).parallel().forEach(k -> {
-                tiles[dirtyList[k]].recompute(walls, hough, params);
+                tiles[dirtyList[k]].recompute(walls, exterior, hough, params);
             })).join();
         } else {
-            for (int k = 0; k < dn; k++) tiles[dirtyList[k]].recompute(walls, hough, params);
+            for (int k = 0; k < dn; k++) tiles[dirtyList[k]].recompute(walls, exterior, hough, params);
         }
     }
 

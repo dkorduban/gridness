@@ -29,7 +29,7 @@ class BuildingExtractorTest {
     void singleHollowRectExtracts() {
         int W = 30, H = 30;
         boolean[] walls = singleRect(W, H, 5, 5, 10, 8);
-        List<Building> bs = BuildingExtractor.extract(walls, W, H, 4);
+        List<Building> bs = BuildingExtractor.extract(walls, null, W, H, 4);
         assertEquals(1, bs.size());
         Building b = bs.get(0);
         assertEquals(6, b.minX);
@@ -52,14 +52,14 @@ class BuildingExtractorTest {
         boolean[] walls = singleRect(W, H, 2, 2, 10, 8);
         boolean[] w2 = singleRect(W, H, 30, 5, 8, 8);
         for (int i = 0; i < walls.length; i++) walls[i] = walls[i] || w2[i];
-        List<Building> bs = BuildingExtractor.extract(walls, W, H, 4);
+        List<Building> bs = BuildingExtractor.extract(walls, null, W, H, 4);
         assertEquals(2, bs.size());
     }
 
     @Test
     void emptyRasterReturnsEmpty() {
         boolean[] walls = new boolean[20 * 20];
-        List<Building> bs = BuildingExtractor.extract(walls, 20, 20, 4);
+        List<Building> bs = BuildingExtractor.extract(walls, null, 20, 20, 4);
         assertTrue(bs.isEmpty());
     }
 
@@ -67,7 +67,7 @@ class BuildingExtractorTest {
     void wallsOnlyReturnsEmpty() {
         boolean[] walls = new boolean[20 * 20];
         java.util.Arrays.fill(walls, true);
-        List<Building> bs = BuildingExtractor.extract(walls, 20, 20, 4);
+        List<Building> bs = BuildingExtractor.extract(walls, null, 20, 20, 4);
         assertTrue(bs.isEmpty());
     }
 }

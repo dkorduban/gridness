@@ -96,9 +96,12 @@ public final class GridnessParams {
         private Interpolation interpolation = Interpolation.BILINEAR;
         private double radius = 30.0;
         private double sigmaFrac = 0.5;
-        // 8 covers SoS-typical buildings (<=16 cells across) with margin to spare.
-        // Larger buildings need a proportionally larger extractionPad.
-        private int extractionPad = 8;
+        // With the global exterior bitmap, even pad=1 extracts huge buildings as
+        // truncated pieces correctly (a megabuilding's interior is no longer
+        // mis-flooded as exterior). pad=4 gives a small margin around the tile
+        // edges so a single isolated cell-edit near a tile seam doesn't change
+        // anything important on the other side.
+        private int extractionPad = 4;
 
         private int houghThetaSteps = 90;
         private int houghNumPeaks = 8;
