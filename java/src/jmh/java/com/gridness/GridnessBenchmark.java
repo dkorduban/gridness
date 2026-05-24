@@ -42,6 +42,7 @@ public class GridnessBenchmark {
     public abstract static class ScenarioState {
 
         Gridness g;
+        LayoutFixture fx;
         int W, H;
         List<int[][]> buildings;
         Random rng;
@@ -63,7 +64,7 @@ public class GridnessBenchmark {
 
         @Setup(Level.Trial)
         public void setupTrial() throws Exception {
-            LayoutFixture fx = LayoutFixture.load(LayoutFixture.defaultDir(), fixtureName());
+            fx = LayoutFixture.load(LayoutFixture.defaultDir(), fixtureName());
             W = fx.width;
             H = fx.height;
             buildings = fx.buildings;
@@ -71,14 +72,42 @@ public class GridnessBenchmark {
             sampleY = H / 2;
             rng = new Random(42);
             g = new Gridness(W, H, GridnessParams.defaults());
-            boolean[][] initial = initialField(fx);
-            g.loadFromField(initial);
+            g.loadFromField(initialField(fx));
             g.valueAt(sampleX, sampleY);
             for (int i = 0; i < ACTIVE; i++) startNew(i);
         }
 
+        /** Cell that, if a wall today, means the building still has work to do. */
+        boolean buildingHasWork(int idx) {
+            boolean target = tickValue();
+            int[][] cells = buildings.get(idx);
+            for (int[] xy : cells) {
+                if (g.isWall(xy[0], xy[1]) != target) return true;
+            }
+            return false;
+        }
+
+        void resetField() {
+            g.loadFromField(initialField(fx));
+            g.valueAt(sampleX, sampleY);
+        }
+
         void startNew(int slot) {
-            int idx = rng.nextInt(buildings.size());
+            // Pick a random building that still has cells to flip into target
+            // state. If we can't find one in a few tries, the whole field is
+            // saturated — reset and try again.
+            for (int attempt = 0; attempt < 16; attempt++) {
+                int idx = rng.nextInt(buildings.size());
+                if (buildingHasWork(idx)) {
+                    useBuilding(slot, idx);
+                    return;
+                }
+            }
+            resetField();
+            useBuilding(slot, rng.nextInt(buildings.size()));
+        }
+
+        void useBuilding(int slot, int idx) {
             activeBuildingIdx[slot] = idx;
             activeCursor[slot] = 0;
             int[][] cells = buildings.get(idx);
@@ -122,7 +151,7 @@ public class GridnessBenchmark {
     /** Starts with an empty field; each tick adds wall cells. */
     @State(Scope.Benchmark)
     public static class BuildState extends ScenarioState {
-        @Param({"grid_uniform_256", "city_768"})
+        @Param({"grid_uniform_256", "longhouses_22x100", "four_districts_512", "city_768"})
         public String fixture;
         @Override protected String fixtureName() { return fixture; }
         @Override protected boolean[][] initialField(LayoutFixture fx) { return new boolean[fx.height][fx.width]; }
@@ -132,7 +161,7 @@ public class GridnessBenchmark {
     /** Starts with the fixture fully built; each tick removes wall cells. */
     @State(Scope.Benchmark)
     public static class DismantleState extends ScenarioState {
-        @Param({"grid_uniform_256", "city_768"})
+        @Param({"grid_uniform_256", "longhouses_22x100", "four_districts_512", "city_768"})
         public String fixture;
         @Override protected String fixtureName() { return fixture; }
         @Override protected boolean[][] initialField(LayoutFixture fx) { return fx.raster; }
@@ -156,7 +185,7 @@ public class GridnessBenchmark {
     /** Baseline: cost of a full from-scratch evaluation. */
     @State(Scope.Benchmark)
     public static class FromScratchState {
-        @Param({"grid_uniform_256", "city_768"})
+        @Param({"grid_uniform_256", "longhouses_22x100", "four_districts_512", "city_768"})
         public String fixture;
         LayoutFixture fx;
         GridnessParams params;

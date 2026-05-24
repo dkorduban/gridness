@@ -39,10 +39,10 @@ tasks.test {
 }
 
 jmh {
-    warmupIterations = 1
-    iterations = 2
-    warmup = "2s"
-    timeOnIteration = "2s"
+    warmupIterations = 2
+    iterations = 3
+    warmup = "3s"
+    timeOnIteration = "3s"
     fork = 1
     timeUnit = "ms"
 }

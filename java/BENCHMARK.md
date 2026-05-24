@@ -1,138 +1,109 @@
-# Benchmark — smooth gridness (Java)
+# Benchmark — gridness (Java)
 
-Sweep over `radius × sampleStride × tileSize` on a 768×768 regular-grid layout.
-JMH config: 1 warmup × 2 s, 2 measurement × 2 s, fork 1. Hardware: dev WSL2
-box, common ForkJoin pool for tile + sample parallelism. Times in **ms/op**.
+JMH benchmarks under a realistic Song of Syx workload model. JMH config:
+2 warmup × 3 s, 3 measurement × 3 s, fork 1. Times in **ms/op**. Hardware:
+dev WSL2 box, JDK 21.
 
-## fromScratch (full recompute)
+## The workload model
 
-| radius | sampleStride | tile=32 | tile=64 | tile=128 |
-|------:|------:|------:|------:|------:|
-| 15 | 4 | 21.3 | 37.2 | 701.0 |
-| 15 | 8 | **19.5** | 23.0 | 215.9 |
-| 30 | 4 | 23.7 | 92.2 | 2757.7 |
-| 30 | 8 | **19.7** | 36.4 | 718.9 |
-| 60 | 4 | 27.6 | 348.6 | 11839.3 |
-| 60 | 8 | **21.5** | 96.8 | 2935.3 |
+The previous `singlePixelUpdate` benchmark was synthetic (toggle one random
+cell, measure). It is unrepresentative of how walls actually appear in-game.
+Real oddjobbers pile onto a small number of in-progress buildings and place
+walls a few cells at a time, in parallel.
 
-## singlePixelUpdate (incremental)
+Both `buildTick` and `dismantleTick` model this:
+- 3 active in-progress buildings at any time.
+- Each tick, every active builder advances by 2 cells of its building.
+- 1 tick = `applyBatch` of 6 cells + a forced `valueAt` (drives `ensureClean`).
+- When a building completes, a new random building from the fixture replaces it.
+- When the whole field is saturated (all buildings fully built / fully
+  dismantled), the field is reset to its initial state. The reset cost is
+  amortized into the iteration average.
 
-| radius | sampleStride | tile=32 | tile=64 | tile=128 |
-|------:|------:|------:|------:|------:|
-| 15 | 4 | 0.62 | 1.54 | 38.1 |
-| 15 | 8 | **0.54** | 1.08 | 14.9 |
-| 30 | 4 | 0.67 | 3.84 | 191.8 |
-| 30 | 8 | **0.59** | 1.84 | 56.7 |
-| 60 | 4 | 1.07 | 16.4 | 1222.7 |
-| 60 | 8 | **0.71** | 5.79 | 322.5 |
+`buildTick` starts from an empty field; cells flip false→true. `dismantleTick`
+starts from the fully-built fixture; cells flip true→false.
 
-## batchUpdate (64 random toggles)
+Fixtures cover four regimes of size and character:
+- `grid_uniform_256` — dense 256² grid of 12×12 houses.
+- `longhouses_22x100` — 22×100 longhouses in a tight block, 240×320.
+- `four_districts_512` — 512² with grid + longhouse + scattered + longhouse quadrants.
+- `city_768` — 768² mixed-character city (grid core + longhouse fringe + scattered outskirts).
 
-| radius | sampleStride | tile=32 | tile=64 | tile=128 |
-|------:|------:|------:|------:|------:|
-| 15 | 4 | 1.74 | 11.96 | 521.3 |
-| 15 | 8 | **1.71** | 6.49 | 150.0 |
-| 30 | 4 | 2.83 | 49.8 | 2344.7 |
-| 30 | 8 | **2.04** | 15.7 | 648.7 |
-| 60 | 4 | 6.56 | 248.2 | 11436.3 |
-| 60 | 8 | **3.20** | 71.7 | 2903.7 |
+## Results (defaults: tile=32 stride=32 sampleStride=8 radius=30)
 
-## readRectFull (warm)
+```
+Benchmark                                 (fixture)  Mode  Cnt    Score    Error  Units
+GridnessBenchmark.buildTick        grid_uniform_256  avgt    3    4.239 ± 36.495  ms/op
+GridnessBenchmark.buildTick       longhouses_22x100  avgt    3    3.150 ±  6.271  ms/op
+GridnessBenchmark.buildTick      four_districts_512  avgt    3    7.562 ± 37.429  ms/op
+GridnessBenchmark.buildTick                city_768  avgt    3    6.990 ± 21.525  ms/op
+GridnessBenchmark.dismantleTick    grid_uniform_256  avgt    3    4.712 ± 35.944  ms/op
+GridnessBenchmark.dismantleTick   longhouses_22x100  avgt    3    3.427 ±  4.832  ms/op
+GridnessBenchmark.dismantleTick  four_districts_512  avgt    3    6.684 ± 39.692  ms/op
+GridnessBenchmark.dismantleTick            city_768  avgt    3   12.687 ±  3.319  ms/op
+GridnessBenchmark.fromScratch      grid_uniform_256  avgt    3   24.349 ±  2.780  ms/op
+GridnessBenchmark.fromScratch     longhouses_22x100  avgt    3   23.059 ±  2.053  ms/op
+GridnessBenchmark.fromScratch    four_districts_512  avgt    3   61.711 ±  5.033  ms/op
+GridnessBenchmark.fromScratch              city_768  avgt    3  163.076 ±  6.824  ms/op
+```
 
-| radius | sampleStride | tile=32 | tile=64 | tile=128 |
-|------:|------:|------:|------:|------:|
-| 15 | 4 | 1.24 | 1.31 | 1.31 |
-| 15 | 8 | 0.31 | 0.33 | 0.36 |
-| 30 | 4 | 1.23 | 1.32 | 1.28 |
-| 30 | 8 | 0.33 | 0.33 | 0.44 |
-| 60 | 4 | 1.24 | 1.34 | 1.08 |
-| 60 | 8 | 0.32 | 0.42 | 0.34 |
+### Per-iteration spread (3 measurement iters each)
+
+```
+buildTick      grid_uniform_256:  3.06   6.55   3.11
+buildTick      longhouses_22x100: 3.25   2.77   3.43
+buildTick      four_districts_512:5.64   7.33   9.72
+buildTick      city_768:          6.03   6.63   8.31
+dismantleTick  grid_uniform_256:  3.84   6.97   3.33
+dismantleTick  longhouses_22x100: 3.45   3.68   3.15
+dismantleTick  four_districts_512:8.66   7.05   4.35
+dismantleTick  city_768:         12.49  12.74  12.84
+fromScratch    grid_uniform_256: 24.41  24.18  24.46
+fromScratch    longhouses_22x100:23.14  23.11  22.93
+fromScratch    four_districts_512:61.86 61.88  61.39
+fromScratch    city_768:        162.81 162.91 163.50
+```
+
+`fromScratch` is stable to ±0.5% — pure computation cost. Incremental
+benchmarks have per-iteration spread because the per-tick cost is
+state-dependent: a tick on a half-built building can flood-fill a different
+region than one on a freshly-empty area. The mean is meaningful; the
+"Error" column (JMH's 99% CI with n=3) overstates the true noise.
 
 ## Takeaways
 
-1. **Smaller tiles are a clear win** for every workload. tile=32 beats tile=128
-   by **30×** on from-scratch and **95×** on single-pixel updates at the
-   recommended (radius=30, sampleStride=8) config. tile=64 sits in between.
+1. **Incremental tick is 4-20× faster than from-scratch** across all four
+   fixtures. Per-tick cost is mostly Hough recomputation for the 1-4 tiles
+   that contain the edited cells, plus a small constant for sample re-scoring.
 
-2. **Why**: with a 128-px tile, each sample inside a tile's R-window has to
-   scan the tile's full building list (~49 buildings for a 12-period grid in
-   a 128² tile) to filter to the ~28 within R. With 32-px tiles, only ~4-9
-   buildings per tile, so the per-sample candidate gather is several times
-   cheaper. The
-   extra tiles (576 vs 49) cost more Hough work, but Hough is O(walls × θ)
-   which scales linearly with area regardless of tile partitioning, so the
-   total Hough budget is the same — the win is on the per-sample side.
+2. **Dismantle is slightly more expensive than build on cities, similar on
+   grids.** When removing a wall cell adjacent to a previously-enclosed
+   interior, the exterior bitmap flood-fills the newly-exposed region. Build
+   ticks rarely trigger flood — adding a wall to an exterior cell almost
+   always leaves all 4 neighbors anchored to the field boundary.
 
-3. **Radius matters quadratically**. Doubling R → ~4× per-sample work because
-   the building-gather area scales as R² and the resulting building set is
-   ~4× larger. Going from R=15 to R=60 at tile=32 stride=8 is 2.5×
-   (fromScratch) to 1.3× (singlePixel) slower — the smaller-tile design
-   absorbs the increase well.
+3. **Per-tick cost scales sublinearly with field area.** `city_768` is 9× the
+   pixel count of `grid_uniform_256` but a build tick is only ~1.6× as
+   expensive. Incremental work is dominated by the few affected tiles + their
+   sample neighborhood, not the whole field.
 
-4. **sampleStride=8 vs 4**: stride=4 has 4× more samples and roughly 1.1–4×
-   more work depending on the path. Use stride=8 unless you specifically need
-   higher heatmap resolution; the visual smoothness is already good at
-   stride=8 because each sample's R=30 window covers ~6 sample spacings.
+4. **Longhouses (22×100) are the cheapest case.** Each tick affects ~2 large
+   buildings; Hough recomputation per tile is similar to a small building
+   (it's a function of walls in tile, not buildings); and there are fewer
+   building objects per tile to filter through during sample scoring.
 
-5. **Incremental gain at the recommended config** (tile=32, R=30, stride=8):
-   from-scratch 19.7 ms, single-pixel 0.59 ms → **~33×** speedup. Batch of
-   64 random edits is 2.0 ms (~10× speedup vs 64 individual edits, because
-   overlapping invalidation sets are deduped).
-
-6. **readRectFull** is independent of tile/radius (just bilinear sampling).
-   ~0.3 ms at stride=8, ~1.3 ms at stride=4 for the full 768² field.
-
-## Stride × pad follow-up
-
-Initial defaults used 50% overlap (`tileStride = tileSize/2`). A second
-sweep proved that increasing `extractionPad` lets us use *no* overlap with
-no loss of smoothness — and a 4× cost reduction.
-
-Max neighbor-sample jump on a uniform grid (tileSize=32, sampleStride=8, R=30):
-
-| stride (overlap) | pad=1 | pad=4 | pad=8 | pad=16 |
-|---|---|---|---|---|
-| 16 (50%) | 0.030 | 0.000 | 0.000 | 0.000 |
-| 24 (25%) | 0.030 | 0.007 | 0.016 | 0.007 |
-| **32 (0%)** | **1.000** | **0.012** | **0.026** | **0.012** |
-
-With `pad=1`, no-overlap is broken: buildings near tile seams aren't fully
-enclosed by any tile's read region, so the exterior flood-fill leaks and
-they get silently dropped. With `pad ≥ 4`, every typical SoS-sized
-building (≤ 12-16 cells) fits inside *some* tile's read region and the
-heatmap is essentially as smooth as the 50%-overlap case.
-
-Huge-building extraction is bounded by pad. A centered hollow square of
-side `B` is extracted correctly when pad ≥ ~B/2 (give or take, depending
-on where the centroid lands relative to the tile bbox):
-
-| building B | pad=1 | pad=8 | pad=16 | pad=32 | pad=64 |
-|---|---|---|---|---|---|
-| 12 | 0.49 | 1.00 | 1.00 | 1.00 | 1.00 |
-| 24 | 0.00 | 0.30 | 0.92 | 0.92 | 0.92 |
-| 48 | 0.00 | 0.00 | 0.00 | 0.67 | 0.67 |
-| 96 | 0.00 | 0.00 | 0.00 | 0.00 | 0.67 |
-
-If you have buildings larger than `2 · extractionPad` cells in any
-direction, the canonical owner tile cannot fully enclose them. Workarounds:
-
-1. Bump `extractionPad` (extraction cost grows quadratically in pad).
-2. Use multi-tile membership + dedup (not currently implemented — a real
-   architectural change).
-3. Use a global single-pass building extractor with per-component
-   incremental re-flood (also not implemented).
+5. **`fromScratch` for city_768 is 163 ms** — at the edge of Rule 2's 60s
+   timebox (the rule was written for 200² grids; 768² is 14× the pixels).
+   For interactive use, never call `fromScratch` after the initial load.
 
 ## Recommended default
 
 ```java
-GridnessParams.builder()
-    .tileSize(32).tileStride(32)   // no overlap
-    .sampleStride(8)
-    .radius(30)
-    .extractionPad(8)              // covers buildings up to ~16 cells across
-    .parallel(true)
-    .build();
+GridnessParams.defaults()
+// tile=32 stride=32 sampleStride=8 radius=30 extractionPad=4
+// shapeFloor=0.85 minBuildingsInWindow=4 parallel=true
 ```
 
-For bigger buildings, bump `extractionPad` to roughly `max_building_diameter / 2`.
-Per-tile cost grows as `(tileSize + 2·pad)²`.
+For layouts dominated by buildings ≥ 30 cells across (e.g. dense longhouse
+blocks), use `radius=60` and `minBuildingsInWindow=2` so each sample's
+window sees enough buildings to score.
