@@ -65,10 +65,14 @@ fromScratch    city_768:        162.81 162.91 163.50
 ```
 
 `fromScratch` is stable to ±0.5% — pure computation cost. Incremental
-benchmarks have per-iteration spread because the per-tick cost is
-state-dependent: a tick on a half-built building can flood-fill a different
-region than one on a freshly-empty area. The mean is meaningful; the
-"Error" column (JMH's 99% CI with n=3) overstates the true noise.
+benchmarks have per-iteration spread that is **workload signal, not noise**.
+Build ticks get more expensive as the field fills (more flood-fill work
+when each new wall threatens to enclose interior); dismantle ticks get
+cheaper as the field empties. Look at the per-iter trace above: e.g.
+`four_districts_512 buildTick` is monotone 5.64 → 7.33 → 9.72, and
+`four_districts_512 dismantleTick` is monotone 8.66 → 7.05 → 4.35 — both
+walking through their state space. JMH's `Error` column (99% CI from n=3)
+overstates the random noise; the mean is a reasonable steady-state proxy.
 
 ## Takeaways
 
