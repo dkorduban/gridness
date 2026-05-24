@@ -18,17 +18,27 @@ import java.util.concurrent.TimeUnit;
 
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.AverageTime)
-@OutputTimeUnit(TimeUnit.MICROSECONDS)
-@Warmup(iterations = 2, time = 2)
-@Measurement(iterations = 3, time = 3)
+@OutputTimeUnit(TimeUnit.MILLISECONDS)
+@Warmup(iterations = 1, time = 2)
+@Measurement(iterations = 2, time = 2)
 @Fork(1)
 public class GridnessBenchmark {
 
-    @Param({"256", "512", "768"})
+    /** Field size (square). */
+    @Param({"768"})
     public int size;
 
-    @Param({"64", "128"})
+    /** Tile size (tile stride = tileSize/2). */
+    @Param({"32", "64", "128"})
     public int tile;
+
+    /** Per-sample window radius in pixels. */
+    @Param({"15", "30", "60"})
+    public int radius;
+
+    /** Heatmap sample spacing in pixels. */
+    @Param({"4", "8"})
+    public int sampleStride;
 
     private boolean[][] field;
     private GridnessParams params;
@@ -45,10 +55,10 @@ public class GridnessBenchmark {
         params = GridnessParams.builder()
                 .tileSize(tile)
                 .tileStride(tile / 2)
-                .sampleStride(8)
+                .sampleStride(sampleStride)
+                .radius(radius)
                 .parallel(true)
                 .build();
-        // Precompute a batch of 64 random pixel toggles for the incremental bench.
         int batchN = 64;
         xs = new int[batchN];
         ys = new int[batchN];
@@ -64,20 +74,14 @@ public class GridnessBenchmark {
     public void perInvocation() {
         preloaded = new Gridness(size, size, params);
         preloaded.loadFromField(field);
-        preloaded.valueAt(size / 2, size / 2); // force initial compute
+        preloaded.valueAt(size / 2, size / 2);
     }
 
     @Benchmark
     public double fromScratch() {
         Gridness g = new Gridness(size, size, params);
         g.loadFromField(field);
-        // Reading the center forces all tiles to compute.
         return g.valueAt(size / 2, size / 2);
-    }
-
-    @Benchmark
-    public double readRectFull() {
-        return sum(preloaded.readRect(0, 0, size, size));
     }
 
     @Benchmark
@@ -90,6 +94,11 @@ public class GridnessBenchmark {
     public double batchUpdate() {
         preloaded.applyBatch(xs, ys, vals, false);
         return preloaded.valueAt(size / 2, size / 2);
+    }
+
+    @Benchmark
+    public double readRectFull() {
+        return sum(preloaded.readRect(0, 0, size, size));
     }
 
     private static double sum(double[][] m) {

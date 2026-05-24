@@ -84,6 +84,11 @@ public final class TileGrid {
         }
     }
 
+    public int colMinForXPad(int x, int pad) { return Math.max(0, colMinForX(x - pad)); }
+    public int colMaxForXPad(int x, int pad) { return Math.min(cols - 1, colMaxForX(x + pad)); }
+    public int rowMinForYPad(int y, int pad) { return Math.max(0, rowMinForY(y - pad)); }
+    public int rowMaxForYPad(int y, int pad) { return Math.min(rows - 1, rowMaxForY(y + pad)); }
+
     private int colMinForX(int x) {
         // smallest col such that originX[col] + tileSize > x  =>  originX[col] > x - tileSize.
         // Use stride-based estimate, then refine.

@@ -6,19 +6,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * One scoring tile. Holds the per-tile cached state and recomputes on demand.
+ * One tile = the unit at which buildings are extracted and a local Hough is
+ * computed. Per-sample scoring lives in {@link SampleGrid}; tiles no longer
+ * compute a per-tile score themselves.
  *
- * The tile owns the rectangle [originX, originX+tileSize) x [originY, originY+tileSize).
- * Buildings are extracted from a one-cell padded region so the BFS can flood the exterior
- * correctly; only buildings whose centroid falls inside the unpadded tile are scored.
+ * <p>Buildings are stored in GLOBAL coordinates and assigned canonically to
+ * the tile whose unpadded bbox contains the building centroid.
  */
 public final class Tile {
 
-    /**
-     * Number of cells of padding read OUTSIDE the tile bbox during recompute,
-     * to seed the boundary flood fill correctly. Any wall edit at a cell within
-     * this padding distance of the tile bbox must mark the tile dirty.
-     */
+    /** Padding (cells) read outside the tile bbox during extract/hough. */
     public static final int PAD = 1;
 
     public final int index;
@@ -27,7 +24,8 @@ public final class Tile {
     public final int size;
 
     private volatile boolean dirty = true;
-    private double score = 0.0;
+    private List<Building> buildings = List.of();
+    private double[] houghAngles = new double[0];
 
     public Tile(int index, int originX, int originY, int size) {
         this.index = index;
@@ -38,10 +36,13 @@ public final class Tile {
 
     public boolean dirty() { return dirty; }
     public void markDirty() { dirty = true; }
-    public double score() { return score; }
+
+    public List<Building> buildings() { return buildings; }
+    public double[] houghAngles() { return houghAngles; }
 
     /**
-     * Recompute the tile score from the current wall grid.
+     * Recompute buildings + Hough angles from the current wall grid.
+     * Buildings get GLOBAL coordinates.
      */
     public void recompute(WallGrid walls, HoughDetector hough, GridnessParams params) {
         final int pad = PAD;
@@ -51,27 +52,32 @@ public final class Tile {
         walls.copyRect(originX - pad, originY - pad, rectW, rectH, localWalls);
 
         List<Building> allBuildings = BuildingExtractor.extract(localWalls, rectW, rectH, params.minBuildingArea);
-        if (allBuildings.isEmpty()) { score = 0.0; dirty = false; return; }
-
-        List<Building> inTile = new ArrayList<>(allBuildings.size());
+        List<Building> kept = new ArrayList<>(allBuildings.size());
+        int outId = 0;
         for (Building b : allBuildings) {
-            double tileLocalX = b.centroidX - pad;
-            double tileLocalY = b.centroidY - pad;
-            if (tileLocalX < 0 || tileLocalX >= size) continue;
-            if (tileLocalY < 0 || tileLocalY >= size) continue;
-            inTile.add(b);
+            // Convert padded-local centroid to GLOBAL by subtracting pad and adding origin.
+            double gx = (b.centroidX - pad) + originX;
+            double gy = (b.centroidY - pad) + originY;
+            if (gx < originX || gx >= originX + size) continue;
+            if (gy < originY || gy >= originY + size) continue;
+            // Translate the boundary array too.
+            int[] gBoundary = new int[b.boundary.length];
+            for (int k = 0; k < b.boundary.length; k += 2) {
+                gBoundary[k]     = b.boundary[k]     + (originX - pad);
+                gBoundary[k + 1] = b.boundary[k + 1] + (originY - pad);
+            }
+            kept.add(new Building(outId++, gx, gy,
+                    b.minX + (originX - pad), b.minY + (originY - pad),
+                    b.maxX + (originX - pad), b.maxY + (originY - pad),
+                    b.area, b.rectangularity, gBoundary));
         }
-        if (inTile.size() < params.minBuildingsInTile) { score = 0.0; dirty = false; return; }
+        this.buildings = kept;
 
-        // Hough is run on the SAME walls used for extraction so wall directions
-        // align with what the buildings see.
-        double[] angles = hough.dominantAngles(localWalls, rectW, rectH,
+        this.houghAngles = hough.dominantAngles(localWalls, rectW, rectH,
                 params.houghNumPeaks,
                 params.houghThresholdFrac,
                 params.houghMinPeakWeight,
                 params.houghMinAngleSepDeg);
-
-        score = FrameScorer.score(inTile, angles, params);
         dirty = false;
     }
 }

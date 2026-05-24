@@ -1,8 +1,8 @@
 # gridness-java
 
-Java port of the V3 (Hough + affine grid-line snap) gridness scorer from the
-Python prototype, restructured as a mutable data structure suitable for use
-inside a game loop.
+Java port of the V3 (Hough + affine grid-line snap) gridness scorer as a
+mutable data structure. Produces a **smooth** gridness heatmap (per-sample
+Gaussian-weighted scoring), with incremental updates on wall edits.
 
 ## Layout
 
@@ -10,19 +10,20 @@ inside a game loop.
 java/
   build.gradle.kts        — Gradle build (Kotlin DSL) with JUnit 5 + JMH
   settings.gradle.kts
-  gradlew, gradlew.bat    — Gradle wrapper (no host gradle required)
+  gradlew, gradlew.bat    — Gradle wrapper
   env.sh                  — sources the local JDK + Gradle for shells that have neither
   src/main/java/com/gridness/
     Gridness.java         — public API
     GridnessParams.java   — builder-style config
-    Interpolation.java    — NEAREST | BILINEAR
+    Interpolation.java    — NEAREST | BILINEAR (between samples)
     internal/
       WallGrid.java       — packed bitset wall storage
       TileGrid.java       — overlapping tile geometry
-      Tile.java           — per-tile cached score; recomputes on demand
-      BuildingExtractor.java — flood-fill exterior + CCL interiors
-      HoughDetector.java  — straight-line Hough → dominant angle peaks
-      Cluster1D.java      — greedy 1D clustering used by FrameScorer
+      Tile.java           — per-tile cached buildings + Hough angles
+      SampleGrid.java     — per-sample cached gridness scores
+      BuildingExtractor.java
+      HoughDetector.java
+      Cluster1D.java
       FrameScorer.java    — projects buildings into affine frames, scores
   src/test/java/com/gridness/...    — JUnit 5 tests
   src/jmh/java/com/gridness/...     — JMH benchmark
@@ -30,73 +31,68 @@ java/
 
 ## Build & test
 
-The repo ships with a Gradle wrapper; bootstrap it with:
-
 ```bash
-source java/env.sh        # only needed if you don't have JDK 21 + gradle on PATH
+source java/env.sh      # only if JDK 21 + gradle aren't on PATH
 cd java
 ./gradlew test
-./gradlew jmh             # ~5 min, full matrix
+./gradlew jmh           # full sweep, ~7-10 min
 ```
 
 ## API at a glance
 
 ```java
 GridnessParams p = GridnessParams.builder()
-    .tileSize(128).tileStride(64).sampleStride(8)
+    .tileSize(64).tileStride(32)
+    .sampleStride(8)
+    .radius(30).sigmaFrac(0.5)
     .interpolation(Interpolation.BILINEAR)
     .parallel(true)
     .build();
 
 Gridness g = new Gridness(768, 768, p);
 
-// Bulk load (use after loading a save).
-boolean[][] field = ...;     // field[y][x] true means wall
-g.loadFromField(field);
-
-// Incremental edits.
+g.loadFromField(field);                         // boolean[H][W], true = wall
 g.setPixel(x, y);
 g.unsetPixel(x, y);
 g.applyBatch(xs, ys, setOrUnset, /*strict=*/false);
 
-// Read.
 double v = g.valueAt(x, y);
-double[][] block = g.readRect(x1, y1, x2, y2);   // at sampleStride spacing
+double[][] block = g.readRect(x1, y1, x2, y2); // at sampleStride spacing
 ```
 
 ## Design
 
-- **Tiles**: the field is covered by overlapping `tileSize`-sized tiles spaced
-  `tileStride` apart. Each tile computes a single gridness value at its center
-  via the V3 algorithm: local Hough → dominant angles → candidate affine
-  frames → cluster boundary projections → take the best.
-- **Interpolation**: heatmap values at arbitrary `(x, y)` are interpolated
-  between the four nearest tile centers (`BILINEAR`) or taken from the closest
-  (`NEAREST`).
-- **Dirty propagation**: a wall edit at `(x, y)` flips the `dirty` flag on
-  every tile whose bbox contains that cell (at most 4 with 50% overlap).
-  Read calls lazily recompute only dirty tiles (in parallel by default).
-- **Concurrency**: not externally thread-safe. Internal recomputation uses the
-  common ForkJoin pool when `parallel=true` and there are multiple dirty
-  tiles.
+Two cached layers:
 
-## Benchmark snapshot (768×768 regular grid, tile=64/stride=32, defaults)
+1. **Tile layer**: covers the field with overlapping `tileSize` tiles spaced
+   `tileStride` apart. Each tile holds (a) the buildings whose centroid lies
+   in it (extracted from a 1-cell-padded read window), and (b) the dominant
+   Hough wall-normal angles from those same walls. Dirty when any wall edit
+   touches its padded read region.
+2. **Sample layer**: a dense grid at `sampleStride` spacing. Each sample
+   gathers buildings within `radius` from the surrounding tiles, computes
+   Gaussian weights (`σ = sigmaFrac · radius`), takes Hough angles from the
+   tile containing it, and scores via the V3 affine pipeline.
 
-| benchmark             | time   |
-|-----------------------|--------|
-| fromScratch           | ~16 ms |
-| singlePixelUpdate     | ~0.5 ms |
-| batchUpdate (64 ops)  | ~3 ms  |
-| readRectFull          | ~0.3 ms (after warm) |
+**Smooth heatmap**: adjacent samples share most of their R-window so values
+change continuously (modulo the discrete Hough source switching at tile
+boundaries, which is small in practice).
 
-Numbers from JMH on the dev machine; treat as order-of-magnitude.
+**Incremental updates**:
+- A wall edit at `(x, y)` marks every tile whose padded bbox contains
+  `(x, y)` dirty (≤4 with 50% overlap).
+- For each newly-dirty tile, every sample that could query it (whose R-window
+  overlaps the tile bbox) is also marked dirty.
+- On the next read, dirty tiles are recomputed first (parallel via ForkJoin),
+  then dirty samples (also parallel above a small threshold).
+
+**Concurrency**: not externally thread-safe. Internal recomputation uses the
+common ForkJoin pool when `parallel=true`.
 
 ## Matches the Python prototype
 
-The scoring math (frame projection, 5/95 percentile extents, greedy 1D cluster,
-`edge_snap · two_axis · (shape_floor + shape_weight · rect)`) mirrors
-`src/gridness/scoring/v3_hough.py` and `src/gridness/scoring/common.py`. The
-difference is that this implementation runs the math **per tile** (one score
-per tile, interpolated across the heatmap) rather than per sample point with a
-Gaussian-weighted radius window. The trade is coarser spatial resolution for
-much cheaper incremental updates.
+Same scoring math as `src/gridness/scoring/v3_hough.py` and `common.py`:
+project boundary into affine frame, take 5/95 percentile extents per axis,
+greedy 1D cluster, score = `edge_snap · two_axis · (shape_floor + shape_weight · rect)`.
+The only difference is `radius` defaults to 30 here (vs 50 in the Python),
+since user feedback says ≥30 is plenty for the SoS use case.

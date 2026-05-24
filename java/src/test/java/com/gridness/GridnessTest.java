@@ -132,6 +132,29 @@ class GridnessTest {
     }
 
     @Test
+    void heatmapIsSmooth() {
+        // On a uniform grid the smooth heatmap should change gradually between
+        // adjacent samples. Discrete tile-discontinuities would show up as big
+        // step changes; bound the max |delta| between adjacent sample columns.
+        int W = 256, H = 256;
+        boolean[][] field = regularGrid(H, W, 12, 4, 8);
+        GridnessParams p = GridnessParams.builder()
+                .tileSize(64).tileStride(32).sampleStride(4).radius(30)
+                .parallel(false).build();
+        Gridness g = new Gridness(W, H, p);
+        g.loadFromField(field);
+        double[][] out = g.readRect(40, 40, W - 40, H - 40);
+        double maxJump = 0;
+        for (double[] row : out) {
+            for (int i = 1; i < row.length; i++) {
+                maxJump = Math.max(maxJump, Math.abs(row[i] - row[i - 1]));
+            }
+        }
+        assertTrue(maxJump < 0.25,
+                "expected smooth heatmap (max neighbor jump < 0.25), got " + maxJump);
+    }
+
+    @Test
     void loadFromFieldMarksAllDirty() {
         Gridness g = new Gridness(256, 256, GridnessParams.builder().tileSize(128).tileStride(64).build());
         // After construction every tile is dirty; force clean by a read.

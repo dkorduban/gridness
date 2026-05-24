@@ -7,6 +7,11 @@ public final class GridnessParams {
     public final int sampleStride;
     public final Interpolation interpolation;
 
+    /** Radius (in pixels) of the per-sample Gaussian window. Buildings outside R contribute 0. */
+    public final double radius;
+    /** Gaussian sigma = sigmaFrac * radius. */
+    public final double sigmaFrac;
+
     public final int houghThetaSteps;
     public final int houghNumPeaks;
     public final double houghThresholdFrac;
@@ -30,6 +35,8 @@ public final class GridnessParams {
         this.tileStride = b.tileStride;
         this.sampleStride = b.sampleStride;
         this.interpolation = b.interpolation;
+        this.radius = b.radius;
+        this.sigmaFrac = b.sigmaFrac;
         this.houghThetaSteps = b.houghThetaSteps;
         this.houghNumPeaks = b.houghNumPeaks;
         this.houghThresholdFrac = b.houghThresholdFrac;
@@ -52,6 +59,8 @@ public final class GridnessParams {
         if (tileStride <= 0 || tileStride > tileSize)
             throw new IllegalArgumentException("tileStride must be in (0, tileSize]");
         if (sampleStride <= 0) throw new IllegalArgumentException("sampleStride must be > 0");
+        if (radius <= 0) throw new IllegalArgumentException("radius must be > 0");
+        if (sigmaFrac <= 0) throw new IllegalArgumentException("sigmaFrac must be > 0");
         if (houghThetaSteps <= 1) throw new IllegalArgumentException("houghThetaSteps must be > 1");
         if (houghNumPeaks <= 0) throw new IllegalArgumentException("houghNumPeaks must be > 0");
         if (clusterTolerance <= 0) throw new IllegalArgumentException("clusterTolerance must be > 0");
@@ -65,10 +74,12 @@ public final class GridnessParams {
     public static GridnessParams defaults() { return new Builder().build(); }
 
     public static final class Builder {
-        private int tileSize = 128;
-        private int tileStride = 64;
+        private int tileSize = 64;
+        private int tileStride = 32;
         private int sampleStride = 8;
         private Interpolation interpolation = Interpolation.BILINEAR;
+        private double radius = 30.0;
+        private double sigmaFrac = 0.5;
 
         private int houghThetaSteps = 90;
         private int houghNumPeaks = 8;
@@ -92,6 +103,8 @@ public final class GridnessParams {
         public Builder tileStride(int v) { this.tileStride = v; return this; }
         public Builder sampleStride(int v) { this.sampleStride = v; return this; }
         public Builder interpolation(Interpolation v) { this.interpolation = v; return this; }
+        public Builder radius(double v) { this.radius = v; return this; }
+        public Builder sigmaFrac(double v) { this.sigmaFrac = v; return this; }
         public Builder houghThetaSteps(int v) { this.houghThetaSteps = v; return this; }
         public Builder houghNumPeaks(int v) { this.houghNumPeaks = v; return this; }
         public Builder houghThresholdFrac(double v) { this.houghThresholdFrac = v; return this; }

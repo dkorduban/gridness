@@ -1,6 +1,7 @@
 package com.gridness;
 
 import com.gridness.internal.HoughDetector;
+import com.gridness.internal.SampleGrid;
 import com.gridness.internal.Tile;
 import com.gridness.internal.TileGrid;
 import com.gridness.internal.WallGrid;
@@ -10,17 +11,13 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.stream.IntStream;
 
 /**
- * Mutable wall grid + gridness heatmap.
+ * Mutable wall grid + smooth gridness heatmap.
  *
- * <p>Lifecycle:
- * <ul>
- *   <li>Construct with field dimensions and {@link GridnessParams}.</li>
- *   <li>Initialize walls via {@link #loadFromField(boolean[][])} (from scratch)
- *       or by individual setters / {@link #applyBatch(int[], int[], boolean[], boolean)}.</li>
- *   <li>Query gridness via {@link #valueAt(int, int)} or {@link #readRect(int, int, int, int)}.</li>
- * </ul>
+ * <p>Per-sample Gaussian-weighted scoring (each sample at sampleStride spacing
+ * uses its own radius-R window of buildings) layered on per-tile Hough +
+ * building extraction (cheap unit of incremental recomputation).
  *
- * <p>Not thread-safe. Internally may use ForkJoin to recompute dirty tiles in parallel.
+ * <p>Not thread-safe; uses ForkJoin internally when {@code parallel=true}.
  */
 public final class Gridness {
 
@@ -31,10 +28,11 @@ public final class Gridness {
     private final WallGrid walls;
     private final TileGrid tileGrid;
     private final Tile[] tiles;
-    private final boolean[] dirty;
-    private boolean anyDirty = true;
+    private final boolean[] tileDirty;
+    private boolean anyTileDirty = true;
 
     private final HoughDetector hough;
+    private final SampleGrid samples;
 
     public Gridness(int width, int height, GridnessParams params) {
         if (width <= 0 || height <= 0)
@@ -46,15 +44,16 @@ public final class Gridness {
         this.tileGrid = new TileGrid(width, height, params.tileSize, params.tileStride);
         int n = tileGrid.tileCount();
         this.tiles = new Tile[n];
-        this.dirty = new boolean[n];
+        this.tileDirty = new boolean[n];
         for (int row = 0; row < tileGrid.rows(); row++) {
             for (int col = 0; col < tileGrid.cols(); col++) {
                 int idx = tileGrid.tileIndex(col, row);
                 tiles[idx] = new Tile(idx, tileGrid.originX(col), tileGrid.originY(row), params.tileSize);
-                dirty[idx] = true;
+                tileDirty[idx] = true;
             }
         }
         this.hough = new HoughDetector(params.houghThetaSteps);
+        this.samples = new SampleGrid(width, height, params.sampleStride, tileGrid);
     }
 
     public int width() { return width; }
@@ -71,31 +70,43 @@ public final class Gridness {
     private void changeOne(int x, int y, boolean value) {
         boolean prev = walls.set(x, y, value);
         if (prev != value) {
-            tileGrid.markTilesContaining(x, y, Tile.PAD, dirty);
-            anyDirty = true;
+            markTilesAndSamplesAffected(x, y);
+            anyTileDirty = true;
         }
     }
 
     /**
-     * Apply a batch of pixel changes.
-     *
-     * @param xs   per-op x coordinates
-     * @param ys   per-op y coordinates
-     * @param setOrUnset  true=set wall, false=unset wall
-     * @param strict  if true, throws IllegalArgumentException when the same
-     *                (x,y) appears with both true and false values; if false,
-     *                the last op for each (x,y) wins.
+     * Mark every tile whose padded read-region covers (x, y) as dirty, AND for
+     * each newly-dirty tile mark every sample that could query it.
      */
+    private void markTilesAndSamplesAffected(int x, int y) {
+        if (x < 0 || x >= width || y < 0 || y >= height) return;
+        int cols = tileGrid.cols();
+        int cMin = tileGrid.colMinForXPad(x, Tile.PAD);
+        int cMax = tileGrid.colMaxForXPad(x, Tile.PAD);
+        int rMin = tileGrid.rowMinForYPad(y, Tile.PAD);
+        int rMax = tileGrid.rowMaxForYPad(y, Tile.PAD);
+        for (int r = rMin; r <= rMax; r++) {
+            int base = r * cols;
+            for (int c = cMin; c <= cMax; c++) {
+                int t = base + c;
+                if (!tileDirty[t]) {
+                    tileDirty[t] = true;
+                    Tile tile = tiles[t];
+                    samples.markDirtyAroundTile(tile.originX, tile.originY, tile.size, params.radius);
+                }
+            }
+        }
+    }
+
     public void applyBatch(int[] xs, int[] ys, boolean[] setOrUnset, boolean strict) {
         if (xs.length != ys.length || xs.length != setOrUnset.length)
             throw new IllegalArgumentException("xs/ys/setOrUnset length mismatch");
         int n = xs.length;
         if (n == 0) return;
 
-        // Deduplicate by (x,y); last wins for non-strict, throw on conflict for strict.
-        // For typical batches we use a long-keyed open-addressing map: key = ((long)x << 32) | (y & 0xFFFFFFFFL).
         long[] keys = new long[Math.max(16, Integer.highestOneBit(n) << 2)];
-        byte[] vals = new byte[keys.length];  // 0 = empty, 1 = set, 2 = unset
+        byte[] vals = new byte[keys.length];
         Arrays.fill(keys, Long.MIN_VALUE);
 
         for (int i = 0; i < n; i++) {
@@ -131,28 +142,22 @@ public final class Gridness {
             boolean value = vals[h] == 1;
             boolean prev = walls.set(x, y, value);
             if (prev != value) {
-                tileGrid.markTilesContaining(x, y, Tile.PAD, dirty);
+                markTilesAndSamplesAffected(x, y);
                 changed = true;
             }
         }
-        if (changed) anyDirty = true;
+        if (changed) anyTileDirty = true;
     }
 
-    /**
-     * Replace the entire wall field. All tiles are marked dirty.
-     * Expected shape: field[y][x].
-     */
     public void loadFromField(boolean[][] field) {
         walls.clearTo(field);
-        Arrays.fill(dirty, true);
-        anyDirty = true;
+        Arrays.fill(tileDirty, true);
+        anyTileDirty = true;
+        samples.markAllDirty();
     }
 
     // ---------------- read ----------------
 
-    /**
-     * Gridness value interpolated at integer pixel (x, y).
-     */
     public double valueAt(int x, int y) {
         if (x < 0 || x >= width || y < 0 || y >= height)
             throw new IndexOutOfBoundsException("(" + x + "," + y + ") out of " + width + "x" + height);
@@ -161,16 +166,16 @@ public final class Gridness {
     }
 
     /**
-     * Read the gridness heatmap over the rectangle [x1, x2) x [y1, y2) at
-     * sampleStride spacing. Result is a 2D array indexed as [j][i] where
-     * j corresponds to ys at y1, y1 + sampleStride, ... and i to xs similarly.
-     *
-     * Both x1 < x2 and y1 < y2 are required, and the rectangle must lie inside
-     * the field.
+     * Read gridness over rect [x1,x2) x [y1,y2) at sampleStride spacing.
+     * Result is double[ny][nx] (j=row, i=col), each entry the scored value at
+     * the corresponding sample point. With interpolation=NEAREST those are
+     * exact sample-grid values; with BILINEAR they are interpolated from the
+     * underlying samples (only relevant if x1/y1 aren't sample-aligned or
+     * sampleStride doesn't divide the rect cleanly).
      */
     public double[][] readRect(int x1, int y1, int x2, int y2) {
         if (x1 < 0 || y1 < 0 || x2 > width || y2 > height || x1 >= x2 || y1 >= y2)
-            throw new IllegalArgumentException("invalid rect (" + x1 + "," + y1 + ")-(" + x2 + "," + y2 + ")");
+            throw new IllegalArgumentException("invalid rect");
         ensureClean();
 
         int s = params.sampleStride;
@@ -190,36 +195,32 @@ public final class Gridness {
     }
 
     private double interpolateAt(int x, int y) {
-        // Tile centers form an irregular grid (last column/row may be clamped).
-        // For interpolation we use the regular tileStride grid for col/row indices.
-        int cols = tileGrid.cols();
-        int rows = tileGrid.rows();
-        int ts = params.tileStride;
-
-        double cf = (x - params.tileSize * 0.5) / ts;
-        double rf = (y - params.tileSize * 0.5) / ts;
+        int s = params.sampleStride;
+        int nx = samples.nx();
+        int ny = samples.ny();
+        double cf = x / (double) s;
+        double rf = y / (double) s;
         int c0 = (int) Math.floor(cf);
         int r0 = (int) Math.floor(rf);
-        double fx = cf - c0;
-        double fy = rf - r0;
 
         if (params.interpolation == Interpolation.NEAREST) {
-            int c = Math.max(0, Math.min(cols - 1, (int) Math.round(cf)));
-            int r = Math.max(0, Math.min(rows - 1, (int) Math.round(rf)));
-            return tiles[tileGrid.tileIndex(c, r)].score();
+            int c = Math.max(0, Math.min(nx - 1, (int) Math.round(cf)));
+            int r = Math.max(0, Math.min(ny - 1, (int) Math.round(rf)));
+            return samples.scoreAt(c, r);
         }
 
         int c1 = c0 + 1;
         int r1 = r0 + 1;
-        int cc0 = Math.max(0, Math.min(cols - 1, c0));
-        int cc1 = Math.max(0, Math.min(cols - 1, c1));
-        int rr0 = Math.max(0, Math.min(rows - 1, r0));
-        int rr1 = Math.max(0, Math.min(rows - 1, r1));
-        double v00 = tiles[tileGrid.tileIndex(cc0, rr0)].score();
-        double v10 = tiles[tileGrid.tileIndex(cc1, rr0)].score();
-        double v01 = tiles[tileGrid.tileIndex(cc0, rr1)].score();
-        double v11 = tiles[tileGrid.tileIndex(cc1, rr1)].score();
-        // Clamp blend weights when out of regular range (because we clamped indices).
+        double fx = cf - c0;
+        double fy = rf - r0;
+        int cc0 = Math.max(0, Math.min(nx - 1, c0));
+        int cc1 = Math.max(0, Math.min(nx - 1, c1));
+        int rr0 = Math.max(0, Math.min(ny - 1, r0));
+        int rr1 = Math.max(0, Math.min(ny - 1, r1));
+        double v00 = samples.scoreAt(cc0, rr0);
+        double v10 = samples.scoreAt(cc1, rr0);
+        double v01 = samples.scoreAt(cc0, rr1);
+        double v11 = samples.scoreAt(cc1, rr1);
         double bx = Math.max(0.0, Math.min(1.0, fx));
         double by = Math.max(0.0, Math.min(1.0, fy));
         double top = v00 * (1 - bx) + v10 * bx;
@@ -227,21 +228,23 @@ public final class Gridness {
         return top * (1 - by) + bot * by;
     }
 
-    // ---------------- recompute ----------------
+    // ---------------- recompute pipeline ----------------
 
     private void ensureClean() {
-        if (!anyDirty) return;
-        // Snapshot dirty indices to a compact list.
+        if (anyTileDirty) recomputeDirtyTiles();
+        if (samples.anyDirty()) recomputeDirtySamples();
+    }
+
+    private void recomputeDirtyTiles() {
         int n = tiles.length;
         int[] dirtyList = new int[n];
         int dn = 0;
-        for (int i = 0; i < n; i++) if (dirty[i]) { dirtyList[dn++] = i; dirty[i] = false; }
-        anyDirty = false;
+        for (int i = 0; i < n; i++) if (tileDirty[i]) { dirtyList[dn++] = i; tileDirty[i] = false; }
+        anyTileDirty = false;
         if (dn == 0) return;
         if (params.parallel && dn > 1) {
-            ForkJoinPool pool = ForkJoinPool.commonPool();
-            int dn_f = dn;
-            pool.submit(() -> IntStream.range(0, dn_f).parallel().forEach(k -> {
+            final int dnF = dn;
+            ForkJoinPool.commonPool().submit(() -> IntStream.range(0, dnF).parallel().forEach(k -> {
                 tiles[dirtyList[k]].recompute(walls, hough, params);
             })).join();
         } else {
@@ -249,18 +252,26 @@ public final class Gridness {
         }
     }
 
-    /** Number of tiles currently waiting to be recomputed (visible for tests/diagnostics). */
-    public int dirtyTileCount() {
-        int n = 0;
-        for (boolean b : dirty) if (b) n++;
-        return n;
+    private void recomputeDirtySamples() {
+        int[] dirty = samples.takeDirtyList();
+        if (dirty.length == 0) return;
+        if (params.parallel && dirty.length > 64) {
+            ForkJoinPool.commonPool().submit(() -> IntStream.of(dirty).parallel().forEach(idx ->
+                    samples.scoreOne(idx, tiles, params))).join();
+        } else {
+            for (int idx : dirty) samples.scoreOne(idx, tiles, params);
+        }
     }
 
-    /** Number of tiles in the grid (cols * rows). */
+    /** Diagnostics. */
+    public int dirtyTileCount() {
+        int n = 0;
+        for (boolean b : tileDirty) if (b) n++;
+        return n;
+    }
+    public int dirtySampleCount() { return samples.dirtyCount(); }
     public int tileCount() { return tiles.length; }
-
-    /** Tile cols (visible for tests). */
     public int tileCols() { return tileGrid.cols(); }
-    /** Tile rows (visible for tests). */
     public int tileRows() { return tileGrid.rows(); }
+    public int sampleCount() { return samples.nx() * samples.ny(); }
 }
