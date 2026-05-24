@@ -82,10 +82,10 @@ public final class Gridness {
     private void markTilesAndSamplesAffected(int x, int y) {
         if (x < 0 || x >= width || y < 0 || y >= height) return;
         int cols = tileGrid.cols();
-        int cMin = tileGrid.colMinForXPad(x, Tile.PAD);
-        int cMax = tileGrid.colMaxForXPad(x, Tile.PAD);
-        int rMin = tileGrid.rowMinForYPad(y, Tile.PAD);
-        int rMax = tileGrid.rowMaxForYPad(y, Tile.PAD);
+        int cMin = tileGrid.colMinForXPad(x, params.extractionPad);
+        int cMax = tileGrid.colMaxForXPad(x, params.extractionPad);
+        int rMin = tileGrid.rowMinForYPad(y, params.extractionPad);
+        int rMax = tileGrid.rowMaxForYPad(y, params.extractionPad);
         for (int r = rMin; r <= rMax; r++) {
             int base = r * cols;
             for (int c = cMin; c <= cMax; c++) {

@@ -38,9 +38,17 @@ cd java
 ./gradlew jmh           # full sweep, ~12 min
 ```
 
-See [BENCHMARK.md](BENCHMARK.md) for full sweep results and recommended
-defaults. TL;DR at `tileSize=32, radius=30, sampleStride=8` on 768×768:
-~20 ms from-scratch, ~0.6 ms single-pixel update.
+See [BENCHMARK.md](BENCHMARK.md) for the full sweep + the stride×pad
+follow-up. TL;DR for the current defaults
+(`tileSize=32, tileStride=32, radius=30, sampleStride=8, extractionPad=8`):
+~5-20 ms from-scratch and well under 1 ms per single-pixel edit on 768×768.
+
+**Bound on building size**: each tile reads cells in a `(tileSize + 2·extractionPad)`
+square; buildings whose extent exceeds that get silently dropped. The
+default `extractionPad=8` handles buildings up to ~16 cells across (typical
+SoS scale). For larger buildings (e.g., a 50-cell walled compound), bump
+`extractionPad` to roughly half the max building diameter. Cost grows as
+the square of the read region.
 
 ## API at a glance
 

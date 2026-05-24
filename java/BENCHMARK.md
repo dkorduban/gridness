@@ -82,16 +82,57 @@ box, common ForkJoin pool for tile + sample parallelism. Times in **ms/op**.
 6. **readRectFull** is independent of tile/radius (just bilinear sampling).
    ~0.3 ms at stride=8, ~1.3 ms at stride=4 for the full 768² field.
 
+## Stride × pad follow-up
+
+Initial defaults used 50% overlap (`tileStride = tileSize/2`). A second
+sweep proved that increasing `extractionPad` lets us use *no* overlap with
+no loss of smoothness — and a 4× cost reduction.
+
+Max neighbor-sample jump on a uniform grid (tileSize=32, sampleStride=8, R=30):
+
+| stride (overlap) | pad=1 | pad=4 | pad=8 | pad=16 |
+|---|---|---|---|---|
+| 16 (50%) | 0.030 | 0.000 | 0.000 | 0.000 |
+| 24 (25%) | 0.030 | 0.007 | 0.016 | 0.007 |
+| **32 (0%)** | **1.000** | **0.012** | **0.026** | **0.012** |
+
+With `pad=1`, no-overlap is broken: buildings near tile seams aren't fully
+enclosed by any tile's read region, so the exterior flood-fill leaks and
+they get silently dropped. With `pad ≥ 4`, every typical SoS-sized
+building (≤ 12-16 cells) fits inside *some* tile's read region and the
+heatmap is essentially as smooth as the 50%-overlap case.
+
+Huge-building extraction is bounded by pad. A centered hollow square of
+side `B` is extracted correctly when pad ≥ ~B/2 (give or take, depending
+on where the centroid lands relative to the tile bbox):
+
+| building B | pad=1 | pad=8 | pad=16 | pad=32 | pad=64 |
+|---|---|---|---|---|---|
+| 12 | 0.49 | 1.00 | 1.00 | 1.00 | 1.00 |
+| 24 | 0.00 | 0.30 | 0.92 | 0.92 | 0.92 |
+| 48 | 0.00 | 0.00 | 0.00 | 0.67 | 0.67 |
+| 96 | 0.00 | 0.00 | 0.00 | 0.00 | 0.67 |
+
+If you have buildings larger than `2 · extractionPad` cells in any
+direction, the canonical owner tile cannot fully enclose them. Workarounds:
+
+1. Bump `extractionPad` (extraction cost grows quadratically in pad).
+2. Use multi-tile membership + dedup (not currently implemented — a real
+   architectural change).
+3. Use a global single-pass building extractor with per-component
+   incremental re-flood (also not implemented).
+
 ## Recommended default
 
 ```java
 GridnessParams.builder()
-    .tileSize(32).tileStride(16)
+    .tileSize(32).tileStride(32)   // no overlap
     .sampleStride(8)
     .radius(30)
+    .extractionPad(8)              // covers buildings up to ~16 cells across
     .parallel(true)
     .build();
 ```
 
-At 768×768 this gives ~20 ms full load and well under 1 ms per single-pixel
-edit — comfortably real-time for game-loop integration.
+For bigger buildings, bump `extractionPad` to roughly `max_building_diameter / 2`.
+Per-tile cost grows as `(tileSize + 2·pad)²`.

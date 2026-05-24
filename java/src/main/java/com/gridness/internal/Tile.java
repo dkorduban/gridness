@@ -15,9 +15,6 @@ import java.util.List;
  */
 public final class Tile {
 
-    /** Padding (cells) read outside the tile bbox during extract/hough. */
-    public static final int PAD = 1;
-
     public final int index;
     public final int originX;
     public final int originY;
@@ -45,7 +42,7 @@ public final class Tile {
      * Buildings get GLOBAL coordinates.
      */
     public void recompute(WallGrid walls, HoughDetector hough, GridnessParams params) {
-        final int pad = PAD;
+        final int pad = params.extractionPad;
         int rectW = size + 2 * pad;
         int rectH = size + 2 * pad;
         boolean[] localWalls = new boolean[rectW * rectH];

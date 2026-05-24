@@ -12,6 +12,16 @@ public final class GridnessParams {
     /** Gaussian sigma = sigmaFrac * radius. */
     public final double sigmaFrac;
 
+    /**
+     * Cells of padding read OUTSIDE each tile's bbox when extracting buildings
+     * and running Hough. A building whose centroid is in the tile bbox is only
+     * extracted correctly if its perimeter sits inside the padded read region.
+     * Bump this if you have buildings larger than {@code 2*extractionPad}
+     * cells across (otherwise they "leak" the exterior flood-fill and are
+     * silently skipped).
+     */
+    public final int extractionPad;
+
     public final int houghThetaSteps;
     public final int houghNumPeaks;
     public final double houghThresholdFrac;
@@ -37,6 +47,7 @@ public final class GridnessParams {
         this.interpolation = b.interpolation;
         this.radius = b.radius;
         this.sigmaFrac = b.sigmaFrac;
+        this.extractionPad = b.extractionPad;
         this.houghThetaSteps = b.houghThetaSteps;
         this.houghNumPeaks = b.houghNumPeaks;
         this.houghThresholdFrac = b.houghThresholdFrac;
@@ -61,6 +72,7 @@ public final class GridnessParams {
         if (sampleStride <= 0) throw new IllegalArgumentException("sampleStride must be > 0");
         if (radius <= 0) throw new IllegalArgumentException("radius must be > 0");
         if (sigmaFrac <= 0) throw new IllegalArgumentException("sigmaFrac must be > 0");
+        if (extractionPad < 1) throw new IllegalArgumentException("extractionPad must be >= 1");
         if (houghThetaSteps <= 1) throw new IllegalArgumentException("houghThetaSteps must be > 1");
         if (houghNumPeaks <= 0) throw new IllegalArgumentException("houghNumPeaks must be > 0");
         if (clusterTolerance <= 0) throw new IllegalArgumentException("clusterTolerance must be > 0");
@@ -75,11 +87,18 @@ public final class GridnessParams {
 
     public static final class Builder {
         private int tileSize = 32;
-        private int tileStride = 16;
+        // No overlap: with extractionPad >= ~half max building size, the
+        // smoothness/cost trade is essentially as good as 50% overlap at
+        // ~4x lower cost. If you have buildings larger than 2*extractionPad
+        // cells across, either bump extractionPad or lower tileStride.
+        private int tileStride = 32;
         private int sampleStride = 8;
         private Interpolation interpolation = Interpolation.BILINEAR;
         private double radius = 30.0;
         private double sigmaFrac = 0.5;
+        // 8 covers SoS-typical buildings (<=16 cells across) with margin to spare.
+        // Larger buildings need a proportionally larger extractionPad.
+        private int extractionPad = 8;
 
         private int houghThetaSteps = 90;
         private int houghNumPeaks = 8;
@@ -107,6 +126,7 @@ public final class GridnessParams {
         public Builder interpolation(Interpolation v) { this.interpolation = v; return this; }
         public Builder radius(double v) { this.radius = v; return this; }
         public Builder sigmaFrac(double v) { this.sigmaFrac = v; return this; }
+        public Builder extractionPad(int v) { this.extractionPad = v; return this; }
         public Builder houghThetaSteps(int v) { this.houghThetaSteps = v; return this; }
         public Builder houghNumPeaks(int v) { this.houghNumPeaks = v; return this; }
         public Builder houghThresholdFrac(double v) { this.houghThresholdFrac = v; return this; }
