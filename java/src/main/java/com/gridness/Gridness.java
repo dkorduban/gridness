@@ -76,7 +76,25 @@ public final class Gridness {
         if (prev != value) {
             markTilesAndSamplesAffected(x, y);
             anyTileDirty = true;
-            exteriorDirty = true;
+            // If the bitmap is already stale, defer to the full recompute in
+            // ensureClean. Otherwise apply the flip incrementally.
+            if (!exteriorDirty) propagateExteriorEdit(x, y, prev, value);
+        }
+    }
+
+    /**
+     * Apply the wall flip to the exterior bitmap incrementally and mark every
+     * tile whose padded read-region overlaps any cell that changed exterior
+     * status (so its building extraction is re-run).
+     */
+    private void propagateExteriorEdit(int x, int y, boolean prev, boolean value) {
+        int n = exterior.updateAfterEdit(walls, x, y, prev, value);
+        for (int k = 0; k < n; k++) {
+            int idx = exterior.changedAt(k);
+            int cx = idx % width;
+            int cy = idx / width;
+            if (cx == x && cy == y) continue;
+            markTilesAndSamplesAffected(cx, cy);
         }
     }
 
@@ -140,6 +158,7 @@ public final class Gridness {
         }
 
         boolean changed = false;
+        boolean exteriorWasDirty = exteriorDirty;
         for (int h = 0; h < keys.length; h++) {
             if (keys[h] == Long.MIN_VALUE) continue;
             int x = (int) (keys[h] >>> 32);
@@ -148,13 +167,11 @@ public final class Gridness {
             boolean prev = walls.set(x, y, value);
             if (prev != value) {
                 markTilesAndSamplesAffected(x, y);
+                if (!exteriorWasDirty) propagateExteriorEdit(x, y, prev, value);
                 changed = true;
             }
         }
-        if (changed) {
-            anyTileDirty = true;
-            exteriorDirty = true;
-        }
+        if (changed) anyTileDirty = true;
     }
 
     public void loadFromField(boolean[][] field) {
