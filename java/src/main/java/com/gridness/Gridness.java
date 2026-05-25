@@ -123,9 +123,14 @@ public final class Gridness {
     }
 
     public void applyBatch(int[] xs, int[] ys, boolean[] setOrUnset, boolean strict) {
-        if (xs.length != ys.length || xs.length != setOrUnset.length)
-            throw new IllegalArgumentException("xs/ys/setOrUnset length mismatch");
-        int n = xs.length;
+        applyBatch(xs, ys, setOrUnset, xs.length, strict);
+    }
+
+    /** Like {@link #applyBatch(int[], int[], boolean[], boolean)} but uses only the first {@code n}
+     *  entries of each array. Lets callers reuse pre-allocated max-size buffers. */
+    public void applyBatch(int[] xs, int[] ys, boolean[] setOrUnset, int n, boolean strict) {
+        if (xs.length < n || ys.length < n || setOrUnset.length < n)
+            throw new IllegalArgumentException("xs/ys/setOrUnset too short for n=" + n);
         if (n == 0) return;
 
         long[] keys = new long[Math.max(16, Integer.highestOneBit(n) << 2)];

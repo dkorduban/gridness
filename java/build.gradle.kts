@@ -46,3 +46,12 @@ jmh {
     fork = 1
     timeUnit = "ms"
 }
+
+tasks.register<JavaExec>("viewer") {
+    description = "Launch the Swing live viewer (walls + heatmap + per-tick latency)."
+    group = "application"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.gridness.viz.GridnessViewer")
+    // Pass-through args: gradle viewer --args="city_768 build"
+    standardInput = System.`in`
+}
