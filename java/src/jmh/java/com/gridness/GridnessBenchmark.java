@@ -45,7 +45,7 @@ public class GridnessBenchmark {
         @Setup(Level.Trial)
         public void setupTrial() throws Exception {
             LayoutFixture fx = LayoutFixture.load(LayoutFixture.defaultDir(), fixtureName());
-            g = new Gridness(fx.width, fx.height, GridnessParams.defaults());
+            g = new Gridness(fx.width, fx.height, paramsFromSysprop());
             sampleX = fx.width / 2;
             sampleY = fx.height / 2;
             sim = new BuildSim(g, fx, mode(), ACTIVE, WORKERS_PER_BUILDING, WORKERS_JITTER, 42L);
@@ -86,6 +86,12 @@ public class GridnessBenchmark {
      * scenario overhead (building selection, batch arrays) out of the
      * measurement.
      */
+    private static GridnessParams paramsFromSysprop() {
+        return "true".equalsIgnoreCase(System.getProperty("gridness.bench.matchingConfig"))
+                ? GridnessParams.builder().tileSize(256).tileStride(256).houghMinPeakWeight(30).build()
+                : GridnessParams.defaults();
+    }
+
     @State(Scope.Benchmark)
     public static class SinglePixelState {
         @Param({"grid_uniform_256", "city_768"})
@@ -102,7 +108,7 @@ public class GridnessBenchmark {
 
         @Setup(Level.Invocation)
         public void invocation() {
-            g = new Gridness(fx.width, fx.height, GridnessParams.defaults());
+            g = new Gridness(fx.width, fx.height, paramsFromSysprop());
             g.loadFromField(fx.raster);
             g.valueAt(fx.width / 2, fx.height / 2);
         }
@@ -125,7 +131,7 @@ public class GridnessBenchmark {
         @Setup(Level.Trial)
         public void setup() throws Exception {
             fx = LayoutFixture.load(LayoutFixture.defaultDir(), fixture);
-            params = GridnessParams.defaults();
+            params = paramsFromSysprop();
         }
     }
 

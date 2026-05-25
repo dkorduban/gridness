@@ -45,6 +45,9 @@ jmh {
     timeOnIteration = "3s"
     fork = 1
     timeUnit = "ms"
+    if (project.hasProperty("matchingConfig")) {
+        jvmArgs = listOf("-Dgridness.bench.matchingConfig=true")
+    }
 }
 
 tasks.register<JavaExec>("viewer") {
