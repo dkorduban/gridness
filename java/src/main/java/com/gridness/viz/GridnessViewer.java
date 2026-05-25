@@ -54,7 +54,8 @@ public final class GridnessViewer extends JFrame {
         pack();
         setLocationRelativeTo(null);
 
-        simThread = new SimThread(fx, parseMode(modeArg), wallPanel, heatmapPanel, statsPanel);
+        simThread = new SimThread(fx, parseMode(modeArg), "cycle".equalsIgnoreCase(modeArg),
+                wallPanel, heatmapPanel, statsPanel);
 
         Timer timer = new Timer(1000 / REPAINT_HZ, e -> {
             wallPanel.repaint();
@@ -183,6 +184,7 @@ public final class GridnessViewer extends JFrame {
     private static final class SimThread extends Thread {
         private final LayoutFixture fx;
         private final BuildSim.Mode initialMode;
+        private final boolean cycle;
         private final WallPanel wallPanel;
         private final HeatmapPanel heatmapPanel;
         private final StatsPanel statsPanel;
@@ -190,12 +192,13 @@ public final class GridnessViewer extends JFrame {
         private final LatencyStats latencyPerTick = new LatencyStats(STATS_WINDOW);
         private final LatencyStats latencyPerCell = new LatencyStats(STATS_WINDOW);
 
-        SimThread(LayoutFixture fx, BuildSim.Mode mode,
+        SimThread(LayoutFixture fx, BuildSim.Mode mode, boolean cycle,
                   WallPanel wallPanel, HeatmapPanel heatmapPanel, StatsPanel statsPanel) {
             super("gridness-sim");
             setDaemon(true);
             this.fx = fx;
             this.initialMode = mode;
+            this.cycle = cycle;
             this.wallPanel = wallPanel;
             this.heatmapPanel = heatmapPanel;
             this.statsPanel = statsPanel;
@@ -233,8 +236,7 @@ public final class GridnessViewer extends JFrame {
                     catch (InterruptedException ignored) { return; }
                 }
 
-                if ("cycle".equals(System.getProperty("gridness.viz.mode", "cycle"))
-                        && System.nanoTime() - lastModeFlip > modeFlipPeriodNs) {
+                if (cycle && System.nanoTime() - lastModeFlip > modeFlipPeriodNs) {
                     mode = (mode == BuildSim.Mode.BUILD) ? BuildSim.Mode.DISMANTLE : BuildSim.Mode.BUILD;
                     sim = new BuildSim(g, fx, mode, 3, 10, 3, 1234L);
                     lastModeFlip = System.nanoTime();
