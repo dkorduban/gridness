@@ -9,16 +9,19 @@ dev WSL2 box, JDK 21.
 The previous `singlePixelUpdate` benchmark was synthetic (toggle one random
 cell, measure). It is unrepresentative of how walls actually appear in-game.
 Real oddjobbers pile onto a small number of in-progress buildings and place
-walls a few cells at a time, in parallel.
+walls in parallel — ~10 workers per building, with some scheduling jitter.
 
 Both `buildTick` and `dismantleTick` model this:
 - 3 active in-progress buildings at any time.
-- Each tick, every active builder advances by 2 cells of its building.
-- 1 tick = `applyBatch` of 6 cells + a forced `valueAt` (drives `ensureClean`).
+- Each tick, every active building advances by ~10 cells (uniform 7-13, jitter ±3).
+- 1 tick = `applyBatch` of ~30 cells + a forced `valueAt` (drives `ensureClean`).
 - When a building completes, a new random building from the fixture replaces it.
 - When the whole field is saturated (all buildings fully built / fully
   dismantled), the field is reset to its initial state. The reset cost is
   amortized into the iteration average.
+
+The reusable simulator lives at {@code com.gridness.sim.BuildSim}; the
+viewer uses the same defaults.
 
 `buildTick` starts from an empty field; cells flip false→true. `dismantleTick`
 starts from the fully-built fixture; cells flip true→false.
@@ -31,30 +34,44 @@ Fixtures cover four regimes of size and character:
 
 ## Results (defaults: tile=32 stride=32 sampleStride=8 radius=30 minBuildingsInWindow=2)
 
+`buildTick` and `dismantleTick` apply ~30 cells per tick (3 buildings × 10±3 workers).
+
 ```
 Benchmark                                      (fixture)  Mode  Cnt   Score    Error  Units
-GridnessBenchmark.buildTick             grid_uniform_256  avgt    3   1.768 ±  2.324  ms/op
-GridnessBenchmark.buildTick            longhouses_22x100  avgt    3   1.351 ±  0.824  ms/op
-GridnessBenchmark.buildTick           four_districts_512  avgt    3   3.339 ±  8.006  ms/op
-GridnessBenchmark.buildTick                     city_768  avgt    3   6.544 ± 12.901  ms/op
-GridnessBenchmark.dismantleTick         grid_uniform_256  avgt    3   1.624 ±  1.501  ms/op
-GridnessBenchmark.dismantleTick        longhouses_22x100  avgt    3   0.882 ±  1.426  ms/op
-GridnessBenchmark.dismantleTick       four_districts_512  avgt    3   1.548 ±  5.109  ms/op
-GridnessBenchmark.dismantleTick                 city_768  avgt    3   1.694 ±  6.891  ms/op
-GridnessBenchmark.fromScratch           grid_uniform_256  avgt    3   5.926 ±  3.490  ms/op
-GridnessBenchmark.fromScratch          longhouses_22x100  avgt    3   4.679 ±  0.433  ms/op
-GridnessBenchmark.fromScratch         four_districts_512  avgt    3  15.356 ±  4.968  ms/op
-GridnessBenchmark.fromScratch                   city_768  avgt    3  39.183 ±  4.500  ms/op
-GridnessBenchmark.singlePixelOnClean    grid_uniform_256  avgt    3   1.119 ±  0.350  ms/op
-GridnessBenchmark.singlePixelOnClean            city_768  avgt    3   1.518 ±  1.448  ms/op
+GridnessBenchmark.buildTick             grid_uniform_256  avgt    3   4.090 ±  0.882  ms/op
+GridnessBenchmark.buildTick            longhouses_22x100  avgt    3   3.189 ±  1.761  ms/op
+GridnessBenchmark.buildTick           four_districts_512  avgt    3   9.772 ± 19.754  ms/op
+GridnessBenchmark.buildTick                     city_768  avgt    3  31.676 ± 54.086  ms/op
+GridnessBenchmark.dismantleTick         grid_uniform_256  avgt    3   1.734 ±  0.475  ms/op
+GridnessBenchmark.dismantleTick        longhouses_22x100  avgt    3   1.068 ±  0.322  ms/op
+GridnessBenchmark.dismantleTick       four_districts_512  avgt    3   1.973 ±  1.513  ms/op
+GridnessBenchmark.dismantleTick                 city_768  avgt    3   2.708 ±  3.937  ms/op
+GridnessBenchmark.fromScratch           grid_uniform_256  avgt    3   5.886 ±  0.409  ms/op
+GridnessBenchmark.fromScratch          longhouses_22x100  avgt    3   4.207 ±  0.615  ms/op
+GridnessBenchmark.fromScratch         four_districts_512  avgt    3  15.409 ± 13.237  ms/op
+GridnessBenchmark.fromScratch                   city_768  avgt    3  39.851 ±  4.084  ms/op
+GridnessBenchmark.singlePixelOnClean    grid_uniform_256  avgt    3   1.179 ±  0.336  ms/op
+GridnessBenchmark.singlePixelOnClean            city_768  avgt    3   1.492 ±  0.573  ms/op
 ```
 
-These are 3-8× faster than the prior version, after replacing the
-per-(sample, frame-pair, building) `Arrays.sort` on projected boundary
-points with a single-pass min/max scan in {@link FrameScorer}. For
-real-world hollow-rect buildings the 5th/95th percentile is virtually
-identical to the 0th/100th, so the sort was buying nothing — and it was
-dominating cost.
+### Per-cell normalization (per-tick ÷ ~30 cells per tick)
+
+| Fixture | build (ms/cell) | dismantle (ms/cell) |
+|---|---|---|
+| grid_uniform_256 | 0.14 | 0.06 |
+| longhouses_22x100 | 0.11 | 0.04 |
+| four_districts_512 | 0.33 | 0.07 |
+| city_768 | 1.06 | 0.09 |
+
+**Dismantle is dramatically cheaper than build** on the big mixed city
+(2.7 ms vs 31.7 ms per tick). Reason: removing a cell from a hollow rect
+leaves the building's centroid/bbox/area essentially unchanged — the
+tile re-extracts the same building, so the sample re-scoring uses the
+same building set and the cached values barely shift. Build mode, by
+contrast, adds isolated cells in open exterior that each register as a
+new tiny "building"; the tile's building list churns every tick until
+enough cells join into the real rect, forcing full sample re-scoring
+each time.
 
 `fromScratch` is stable to ±2% — pure computation cost. Incremental
 benchmarks have per-iteration spread that is **workload signal, not noise**:
