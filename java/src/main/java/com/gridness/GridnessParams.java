@@ -115,7 +115,7 @@ public final class GridnessParams {
         private double clusterTolerance = 2.5;
         private int minDistinctBuildings = 2;
         private int requiredLinesPerAxis = 3;
-        private int minBuildingsInWindow = 4;
+        private int minBuildingsInWindow = 2;
         private int minBuildingArea = 4;
 
         private double shapeFloor = 0.85;

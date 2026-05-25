@@ -29,39 +29,22 @@ Fixtures cover four regimes of size and character:
 - `four_districts_512` — 512² with grid + longhouse + scattered + longhouse quadrants.
 - `city_768` — 768² mixed-character city (grid core + longhouse fringe + scattered outskirts).
 
-## Results (defaults: tile=32 stride=32 sampleStride=8 radius=30)
+## Results (defaults: tile=32 stride=32 sampleStride=8 radius=30 minBuildingsInWindow=2)
 
 ```
 Benchmark                                 (fixture)  Mode  Cnt    Score    Error  Units
-GridnessBenchmark.buildTick        grid_uniform_256  avgt    3    4.239 ± 36.495  ms/op
-GridnessBenchmark.buildTick       longhouses_22x100  avgt    3    3.150 ±  6.271  ms/op
-GridnessBenchmark.buildTick      four_districts_512  avgt    3    7.562 ± 37.429  ms/op
-GridnessBenchmark.buildTick                city_768  avgt    3    6.990 ± 21.525  ms/op
-GridnessBenchmark.dismantleTick    grid_uniform_256  avgt    3    4.712 ± 35.944  ms/op
-GridnessBenchmark.dismantleTick   longhouses_22x100  avgt    3    3.427 ±  4.832  ms/op
-GridnessBenchmark.dismantleTick  four_districts_512  avgt    3    6.684 ± 39.692  ms/op
-GridnessBenchmark.dismantleTick            city_768  avgt    3   12.687 ±  3.319  ms/op
-GridnessBenchmark.fromScratch      grid_uniform_256  avgt    3   24.349 ±  2.780  ms/op
-GridnessBenchmark.fromScratch     longhouses_22x100  avgt    3   23.059 ±  2.053  ms/op
-GridnessBenchmark.fromScratch    four_districts_512  avgt    3   61.711 ±  5.033  ms/op
-GridnessBenchmark.fromScratch              city_768  avgt    3  163.076 ±  6.824  ms/op
-```
-
-### Per-iteration spread (3 measurement iters each)
-
-```
-buildTick      grid_uniform_256:  3.06   6.55   3.11
-buildTick      longhouses_22x100: 3.25   2.77   3.43
-buildTick      four_districts_512:5.64   7.33   9.72
-buildTick      city_768:          6.03   6.63   8.31
-dismantleTick  grid_uniform_256:  3.84   6.97   3.33
-dismantleTick  longhouses_22x100: 3.45   3.68   3.15
-dismantleTick  four_districts_512:8.66   7.05   4.35
-dismantleTick  city_768:         12.49  12.74  12.84
-fromScratch    grid_uniform_256: 24.41  24.18  24.46
-fromScratch    longhouses_22x100:23.14  23.11  22.93
-fromScratch    four_districts_512:61.86 61.88  61.39
-fromScratch    city_768:        162.81 162.91 163.50
+GridnessBenchmark.buildTick        grid_uniform_256  avgt    3    4.619 ± 27.827  ms/op
+GridnessBenchmark.buildTick       longhouses_22x100  avgt    3    3.877 ±  5.262  ms/op
+GridnessBenchmark.buildTick      four_districts_512  avgt    3    7.842 ± 34.147  ms/op
+GridnessBenchmark.buildTick                city_768  avgt    3    7.552 ±  4.457  ms/op
+GridnessBenchmark.dismantleTick    grid_uniform_256  avgt    3    5.580 ± 37.892  ms/op
+GridnessBenchmark.dismantleTick   longhouses_22x100  avgt    3    4.243 ±  8.578  ms/op
+GridnessBenchmark.dismantleTick  four_districts_512  avgt    3    8.898 ± 26.331  ms/op
+GridnessBenchmark.dismantleTick            city_768  avgt    3   14.033 ±  7.093  ms/op
+GridnessBenchmark.fromScratch      grid_uniform_256  avgt    3   24.453 ±  1.029  ms/op
+GridnessBenchmark.fromScratch     longhouses_22x100  avgt    3   26.143 ±  3.226  ms/op
+GridnessBenchmark.fromScratch    four_districts_512  avgt    3   68.308 ±  5.828  ms/op
+GridnessBenchmark.fromScratch              city_768  avgt    3  172.367 ± 16.566  ms/op
 ```
 
 `fromScratch` is stable to ±0.5% — pure computation cost. Incremental
@@ -105,9 +88,17 @@ overstates the random noise; the mean is a reasonable steady-state proxy.
 ```java
 GridnessParams.defaults()
 // tile=32 stride=32 sampleStride=8 radius=30 extractionPad=4
-// shapeFloor=0.85 minBuildingsInWindow=4 parallel=true
+// shapeFloor=0.85 minBuildingsInWindow=2 parallel=true
 ```
 
-For layouts dominated by buildings ≥ 30 cells across (e.g. dense longhouse
-blocks), use `radius=60` and `minBuildingsInWindow=2` so each sample's
-window sees enough buildings to score.
+For layouts where individual buildings span ≥ 60 cells in any axis
+(e.g. 22×60 longhouses with sparse row count), bump `radius=60` so each
+sample's window can reach the next row of buildings; otherwise the score
+wobbles around 0.55 because most samples see only the closest row.
+
+Tradeoff of `minBuildingsInWindow=2` (vs the previous default of 4):
+random/scattered layouts now score around 0.65 instead of <0.6, because a
+pair of randomly-placed buildings can be axis-aligned by chance. Net
+separation from a uniform grid (which scores >0.75) is narrower but
+preserves the intuitive ordering. Longhouse layouts that were
+unmeasurable with min=4 now score appropriately.
