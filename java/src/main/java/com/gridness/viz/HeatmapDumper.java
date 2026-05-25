@@ -31,13 +31,24 @@ public final class HeatmapDumper {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
-            System.err.println("usage: HeatmapDumper [--dir <fixture-dir>] <out-dir> <fixture-1> [<fixture-2> ...]");
+            System.err.println("usage: HeatmapDumper [--dir <fixture-dir>] "
+                    + "[--param key=value ...] <out-dir> <fixture-1> [<fixture-2> ...]");
+            System.err.println("  param keys: minBuildingsInWindow, houghMinPeakWeight, "
+                    + "houghThresholdFrac, radius, minBuildingArea, requiredLinesPerAxis, "
+                    + "minDistinctBuildings, clusterTolerance, shapeFloor, shapeWeight, "
+                    + "houghNumPeaks, houghMinAngleSepDeg, minAngleSin");
             System.exit(2);
         }
         Path fxDir = LayoutFixture.defaultDir();
         List<String> rest = new ArrayList<>();
+        java.util.Map<String, String> overrides = new java.util.LinkedHashMap<>();
         for (int i = 0; i < args.length; i++) {
             if ("--dir".equals(args[i])) { fxDir = Paths.get(args[++i]); continue; }
+            if ("--param".equals(args[i])) {
+                String[] kv = args[++i].split("=", 2);
+                overrides.put(kv[0], kv[1]);
+                continue;
+            }
             rest.add(args[i]);
         }
         if (rest.size() < 2) {
@@ -48,11 +59,10 @@ public final class HeatmapDumper {
         Files.createDirectories(outDir);
 
         List<String> names = new ArrayList<>(rest.subList(1, rest.size()));
-        GridnessParams defaults = GridnessParams.defaults();
 
         for (String name : names) {
             LayoutFixture fx = LayoutFixture.load(fxDir, name);
-            GridnessParams params = paramsFor(name, defaults);
+            GridnessParams params = paramsFor(name, overrides);
             long t0 = System.nanoTime();
             Gridness g = new Gridness(fx.width, fx.height, params);
             g.loadFromField(fx.raster);
@@ -66,13 +76,40 @@ public final class HeatmapDumper {
         }
     }
 
-    private static GridnessParams paramsFor(String name, GridnessParams defaults) {
-        // Mirror the Python script's per-fixture overrides so the two
-        // implementations score the same fixture with the same params.
-        if (name.equals("longhouses_22x60")) {
-            return GridnessParams.builder().radius(60).build();
+    private static GridnessParams paramsFor(String name, java.util.Map<String, String> overrides) {
+        GridnessParams.Builder b = GridnessParams.builder();
+        // Per-fixture defaults (longhouse needs wider R).
+        if (name.equals("longhouses_22x60")) b.radius(60);
+        // CLI --param overrides apply on top.
+        for (var e : overrides.entrySet()) {
+            applyOverride(b, e.getKey(), e.getValue());
         }
-        return defaults;
+        return b.build();
+    }
+
+    private static void applyOverride(GridnessParams.Builder b, String key, String val) {
+        switch (key) {
+            case "tileSize"               -> b.tileSize(Integer.parseInt(val));
+            case "tileStride"             -> b.tileStride(Integer.parseInt(val));
+            case "sampleStride"           -> b.sampleStride(Integer.parseInt(val));
+            case "radius"                 -> b.radius(Double.parseDouble(val));
+            case "sigmaFrac"              -> b.sigmaFrac(Double.parseDouble(val));
+            case "extractionPad"          -> b.extractionPad(Integer.parseInt(val));
+            case "houghThetaSteps"        -> b.houghThetaSteps(Integer.parseInt(val));
+            case "houghNumPeaks"          -> b.houghNumPeaks(Integer.parseInt(val));
+            case "houghThresholdFrac"     -> b.houghThresholdFrac(Double.parseDouble(val));
+            case "houghMinPeakWeight"     -> b.houghMinPeakWeight(Double.parseDouble(val));
+            case "houghMinAngleSepDeg"    -> b.houghMinAngleSepDeg(Double.parseDouble(val));
+            case "minAngleSin"            -> b.minAngleSin(Double.parseDouble(val));
+            case "clusterTolerance"       -> b.clusterTolerance(Double.parseDouble(val));
+            case "minDistinctBuildings"   -> b.minDistinctBuildings(Integer.parseInt(val));
+            case "requiredLinesPerAxis"   -> b.requiredLinesPerAxis(Integer.parseInt(val));
+            case "minBuildingsInWindow"   -> b.minBuildingsInWindow(Integer.parseInt(val));
+            case "minBuildingArea"        -> b.minBuildingArea(Integer.parseInt(val));
+            case "shapeFloor"             -> b.shapeFloor(Double.parseDouble(val));
+            case "shapeWeight"            -> b.shapeWeight(Double.parseDouble(val));
+            default -> throw new IllegalArgumentException("unknown --param key: " + key);
+        }
     }
 
     private static double mean(double[][] heat) {

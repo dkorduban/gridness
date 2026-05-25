@@ -106,9 +106,13 @@ public final class GridnessParams {
         private int houghThetaSteps = 90;
         private int houghNumPeaks = 8;
         private double houghThresholdFrac = 0.05;
-        // 5 votes is fine for a tile-sized Hough; the relative-fraction threshold
-        // (5% of the peak) prevents picking up noise on its own.
-        private double houghMinPeakWeight = 5.0;
+        // Tuned to match Python prototype's heatmap distribution on the
+        // original 27-layout fixture set: L1=0.13, mean bias ~0 (vs +0.16
+        // and L1=0.18 at hpw=5). Lower values let scattered/organic layouts
+        // accumulate spurious gridness from chance alignments; higher values
+        // start rejecting real grid lines on rotated/rounded-corner layouts.
+        // See scripts/sweep_java_params.py.
+        private double houghMinPeakWeight = 18.0;
         private double houghMinAngleSepDeg = 5.0;
 
         private double minAngleSin = 0.34;

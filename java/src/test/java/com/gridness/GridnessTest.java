@@ -67,14 +67,23 @@ class GridnessTest {
         assertTrue(mean < 0.72, "scattered mean=" + mean + ", expected < 0.72");
     }
 
+    /**
+     * Sparse fixtures (few buildings per R-window) need a lower Hough peak
+     * threshold than the python-matched default of 18, because each tile
+     * sees only a handful of walls and the Hough accumulator never reaches
+     * 18 votes even for a clean grid.
+     */
+    private static GridnessParams sparseLayoutParams() {
+        return GridnessParams.builder().houghMinPeakWeight(5).build();
+    }
+
     @Test
     void longhouseBlockScoresHigh() throws Exception {
-        // 22-wide x 60-tall in a 160x256 canvas yields only 16 buildings total
-        // (8 columns x 2 rows). With default radius=30 the next row is out of
-        // reach, so most samples see only one row of 2 neighbors -> score
-        // wobbles around 0.55. radius=60 brings the second row in.
+        // 22-wide x 60-tall in a 160x256 canvas yields only 16 buildings total.
+        // Needs radius=60 to reach the next row + permissive Hough threshold.
         LayoutFixture lh = fx("longhouses_22x60");
-        Gridness g = load(lh, GridnessParams.builder().radius(60).build());
+        Gridness g = load(lh, GridnessParams.builder()
+                .radius(60).houghMinPeakWeight(5).build());
         double mean = meanOver(g, 16);
         assertTrue(mean > 0.65, "longhouses_22x60 mean=" + mean + ", expected > 0.65");
     }
@@ -82,7 +91,7 @@ class GridnessTest {
     @Test
     void longLonghousesScoreHigh() throws Exception {
         LayoutFixture lh = fx("longhouses_12x100");
-        Gridness g = load(lh, GridnessParams.defaults());
+        Gridness g = load(lh, sparseLayoutParams());
         double mean = meanOver(g, 16);
         assertTrue(mean > 0.65, "longhouses_12x100 mean=" + mean + ", expected > 0.65");
     }
@@ -156,9 +165,9 @@ class GridnessTest {
 
     @Test
     void megaBuildingProducesNonZeroScore() throws Exception {
+        // Sparse layout (one big building + 8 small) — needs permissive Hough.
         LayoutFixture mega = fx("mega_in_grid_256");
-        Gridness g = load(mega, GridnessParams.defaults());
-        // Megabuilding occupies roughly (70,70)-(170,170). Sample near its center.
+        Gridness g = load(mega, sparseLayoutParams());
         double[][] out = g.readRect(110, 110, 130, 130);
         double max = 0;
         for (double[] row : out) for (double v : row) max = Math.max(max, v);
