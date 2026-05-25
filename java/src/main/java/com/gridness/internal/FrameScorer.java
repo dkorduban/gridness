@@ -128,16 +128,19 @@ public final class FrameScorer {
                         values, weights, ids,
                         p.clusterTolerance, p.minDistinctBuildings, p.requiredLinesPerAxis);
 
-                double maxWeight = 2.0 * weightSum;
-                double uScore = uRes.score / maxWeight;
-                double vScore = vRes.score / maxWeight;
-                double edgeSnap = Math.sqrt(Math.max(0.0, uScore) * Math.max(0.0, vScore));
+                // Match Python's _score_one_frame exactly:
+                //   u_score   = explained_mass * cluster_count_score * tightness
+                //   edge_snap = sqrt(u_score * v_score)
+                //   two_axis  = sqrt(U_support * V_support)  where U_support = cluster_count_score
+                //   final     = edge_snap * two_axis
+                // i.e. cluster_count_score appears twice (once inside u_score, once via U_support).
+                double uCC = Math.min((double) uRes.validClustersUncapped / p.requiredLinesPerAxis, 1.0);
+                double vCC = Math.min((double) vRes.validClustersUncapped / p.requiredLinesPerAxis, 1.0);
 
-                double uSupport = (double) uRes.validClusters / p.requiredLinesPerAxis;
-                double vSupport = (double) vRes.validClusters / p.requiredLinesPerAxis;
-                if (uSupport > 1.0) uSupport = 1.0;
-                if (vSupport > 1.0) vSupport = 1.0;
-                double twoAxis = Math.sqrt(uSupport * vSupport);
+                double uPerAxis = uRes.explainedMass * uCC * uRes.tightness;
+                double vPerAxis = vRes.explainedMass * vCC * vRes.tightness;
+                double edgeSnap = Math.sqrt(Math.max(0.0, uPerAxis) * Math.max(0.0, vPerAxis));
+                double twoAxis = Math.sqrt(uCC * vCC);
 
                 double score = edgeSnap * twoAxis;
                 if (score > bestScore) bestScore = score;

@@ -140,8 +140,9 @@ def wasserstein_1d(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.mean(np.abs(af - bf)))
 
 
-def score_combo(java_dir: Path) -> Metrics:
+def score_combo(java_dir: Path, verbose: bool = False) -> Metrics:
     l1s, l2s, hubers, welschs, maxes, signeds, w1s, meds = [], [], [], [], [], [], [], []
+    per_fixture: list[tuple[str, float, float, float]] = []
     for name in LAYOUTS:
         py = python_heatmap(name)
         jp = java_dir / f"{name}.heatmap.txt"
@@ -153,7 +154,8 @@ def score_combo(java_dir: Path) -> Metrics:
             c = min(py.shape[1], jv.shape[1])
             py = py[:r, :c]; jv = jv[:r, :c]
         e = jv - py
-        l1s.append(float(np.mean(np.abs(e))))
+        fl1 = float(np.mean(np.abs(e)))
+        l1s.append(fl1)
         l2s.append(float(np.sqrt(np.mean(e * e))))
         hubers.append(float(np.mean(pseudo_huber(e, 0.1))))
         welschs.append(float(np.mean(welsch(e, 0.2))))
@@ -161,6 +163,12 @@ def score_combo(java_dir: Path) -> Metrics:
         signeds.append(float(np.mean(e)))
         w1s.append(wasserstein_1d(jv, py))
         meds.append(float(np.median(np.abs(e))))
+        per_fixture.append((name, float(py.mean()), float(jv.mean()), fl1))
+    if verbose:
+        per_fixture.sort(key=lambda x: -x[3])
+        print("  per-fixture (worst first):")
+        for n, pm, jm, l1 in per_fixture:
+            print(f"    {n:28s} py={pm:.3f}  java={jm:.3f}  Δ={jm-pm:+.3f}  L1={l1:.3f}")
     return Metrics(
         l1=float(np.mean(l1s)),
         l2=float(np.mean(l2s)),
@@ -180,27 +188,19 @@ def main() -> None:
         python_heatmap(name)
 
     sweep = []
-    # Sweep (shape_floor, shape_weight=1-floor) to penalize non-rect layouts
-    # like hexagonal. Java's current shape penalty is shape_floor=0.85,
-    # shape_weight=0.15 — only docks a hex (rect≈0.75) by 4%. Pushing
-    # shape_floor down to 0.4 with weight=0.6 means a hex gets ~15% penalty.
-    for shape_floor in [0.4, 0.6, 0.7, 0.85]:
-        shape_weight = round(1.0 - shape_floor, 3)
-        for hpw in [12, 15, 18]:
-            for clip in [0.0, 0.05]:
-                params = {
-                    "shapeFloor": shape_floor,
-                    "shapeWeight": shape_weight,
-                    "houghMinPeakWeight": hpw,
-                    "boundaryClipPercentile": clip,
-                }
-                tag = f"sf{shape_floor}_sw{shape_weight}_hpw{hpw}_clip{clip}"
-                out_dir = JAVA_TMP / tag
-                print(f"\nrunning Java {params}")
-                run_java_dump(out_dir, params)
-                m = score_combo(out_dir)
-                print(f"  {m}")
-                sweep.append((params, m))
+    for sf in [0.2, 0.3, 0.85]:
+        sw = round(1.0 - sf, 3)
+        params = {
+            "tileSize": 256, "tileStride": 256,
+            "houghMinPeakWeight": 30,
+            "shapeFloor": sf, "shapeWeight": sw,
+        }
+        tag = f"sf{sf}"
+        out_dir = JAVA_TMP / tag
+        run_java_dump(out_dir, params)
+        m = score_combo(out_dir, verbose=True)
+        print(f"\n>>> {params}: {m}")
+        sweep.append((params, m))
 
     def show(title, key):
         print(f"\n=== ranked by {title} ===")

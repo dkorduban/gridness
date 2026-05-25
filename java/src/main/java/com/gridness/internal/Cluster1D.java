@@ -10,11 +10,24 @@ package com.gridness.internal;
 public final class Cluster1D {
 
     public static final class Result {
-        public final double score;       // sum of weights over valid clusters
-        public final int validClusters;  // count of valid clusters
-        public Result(double score, int validClusters) {
+        /** Sum of weights over valid clusters (raw — caller can normalize). */
+        public final double score;
+        /** Number of valid clusters (≥ minDistinctBuildings), already capped at requiredLinesPerAxis. */
+        public final int validClusters;
+        /** Number of valid clusters BEFORE capping at requiredLinesPerAxis. */
+        public final int validClustersUncapped;
+        /** explained_mass = sum_valid_weights / total_weights, in [0,1]. */
+        public final double explainedMass;
+        /** tightness = max(0, 1 - avg_residual / tau), in [0,1]. */
+        public final double tightness;
+
+        public Result(double score, int validClusters, int validClustersUncapped,
+                      double explainedMass, double tightness) {
             this.score = score;
             this.validClusters = validClusters;
+            this.validClustersUncapped = validClustersUncapped;
+            this.explainedMass = explainedMass;
+            this.tightness = tightness;
         }
     }
 
@@ -35,52 +48,88 @@ public final class Cluster1D {
                                           int minDistinctBuildings,
                                           int requiredLinesPerAxis) {
         int n = values.length;
-        if (n == 0) return new Result(0.0, 0);
+        if (n == 0) return new Result(0.0, 0, 0, 0.0, 0.0);
 
         Integer[] idx = new Integer[n];
         for (int i = 0; i < n; i++) idx[i] = i;
         java.util.Arrays.sort(idx, (a, b) -> Double.compare(values[a], values[b]));
 
-        double totalScore = 0.0;
-        int validCount = 0;
+        // First pass: walk clusters greedily, tracking per-cluster (weight, center, residual_sum).
+        // We process valid clusters in-flight (no allocation of cluster arrays).
+        double totalWeight = 0.0;
+        for (double w : weights) totalWeight += w;
+        if (totalWeight <= 0.0) return new Result(0.0, 0, 0, 0.0, 0.0);
+
+        double validWeightSum = 0.0;        // sum of weights in valid clusters
+        double validResidualSum = 0.0;      // sum of residuals (w * |v - center|) in valid clusters
+        int validCount = 0;                  // # of valid clusters (uncapped)
+
+        // Walking buffers for the current open cluster:
         double clusterWeight = 0.0;
-        double clusterStart = values[idx[0]];
-        double clusterLast = clusterStart;
-        // Track distinct buildings within current cluster using a small hash set.
-        // We use a simple open-addressing int set sized to handle up to N.
+        double clusterWvSum = 0.0;          // sum w*v, for center
+        // Cache values per cluster so we can compute residual in a second pass over the cluster's points.
+        // Use arrays sized to n (worst case = single cluster of all n points).
+        double[] clusterV = new double[n];
+        double[] clusterW = new double[n];
+        int clusterN = 0;
+        double clusterLast = values[idx[0]];
         IntSet seen = new IntSet(Math.max(16, n));
 
-        seen.add(buildingIds[idx[0]]);
-        clusterWeight = weights[idx[0]];
+        // open first cluster with idx[0]
+        int first = idx[0];
+        seen.add(buildingIds[first]);
+        clusterV[0] = values[first];
+        clusterW[0] = weights[first];
+        clusterN = 1;
+        clusterWeight = weights[first];
+        clusterWvSum = weights[first] * values[first];
 
         for (int k = 1; k < n; k++) {
             int i = idx[k];
             double v = values[i];
             if (v - clusterLast <= tolerance) {
                 clusterWeight += weights[i];
+                clusterWvSum += weights[i] * v;
+                clusterV[clusterN] = v;
+                clusterW[clusterN] = weights[i];
+                clusterN++;
                 seen.add(buildingIds[i]);
                 clusterLast = v;
             } else {
                 if (seen.size() >= minDistinctBuildings) {
-                    totalScore += clusterWeight;
+                    double center = clusterWvSum / Math.max(clusterWeight, 1e-9);
+                    double rsum = 0.0;
+                    for (int j = 0; j < clusterN; j++) rsum += clusterW[j] * Math.abs(clusterV[j] - center);
+                    validWeightSum += clusterWeight;
+                    validResidualSum += rsum;
                     validCount++;
                 }
                 seen.clear();
-                clusterStart = v;
-                clusterLast = v;
                 clusterWeight = weights[i];
+                clusterWvSum = weights[i] * v;
+                clusterN = 1;
+                clusterV[0] = v;
+                clusterW[0] = weights[i];
                 seen.add(buildingIds[i]);
+                clusterLast = v;
             }
         }
         if (seen.size() >= minDistinctBuildings) {
-            totalScore += clusterWeight;
+            double center = clusterWvSum / Math.max(clusterWeight, 1e-9);
+            double rsum = 0.0;
+            for (int j = 0; j < clusterN; j++) rsum += clusterW[j] * Math.abs(clusterV[j] - center);
+            validWeightSum += clusterWeight;
+            validResidualSum += rsum;
             validCount++;
         }
 
+        if (validCount == 0) return new Result(0.0, 0, 0, 0.0, 0.0);
+
+        double explainedMass = validWeightSum / Math.max(totalWeight, 1e-9);
+        double avgResidual = validResidualSum / Math.max(validWeightSum, 1e-9);
+        double tightness = Math.max(0.0, 1.0 - avgResidual / tolerance);
         int reported = Math.min(validCount, requiredLinesPerAxis);
-        // We want score to also be capped meaningfully. The Python version returns sum-of-weights
-        // for valid clusters but then min(valid_count, required) is used for support. We mirror:
-        return new Result(totalScore, reported);
+        return new Result(validWeightSum, reported, validCount, explainedMass, tightness);
     }
 
     /** Tiny open-addressing int set. */
