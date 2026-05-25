@@ -55,3 +55,10 @@ tasks.register<JavaExec>("viewer") {
     // Pass-through args: gradle viewer --args="city_768 build"
     standardInput = System.`in`
 }
+
+tasks.register<JavaExec>("dumpHeatmaps") {
+    description = "Compute Java's gridness heatmap for each named fixture and write text files."
+    group = "application"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.gridness.viz.HeatmapDumper")
+}
