@@ -109,6 +109,7 @@ public final class HeatmapDumper {
             case "shapeFloor"             -> b.shapeFloor(Double.parseDouble(val));
             case "shapeWeight"            -> b.shapeWeight(Double.parseDouble(val));
             case "boundaryClipPercentile" -> b.boundaryClipPercentile(Double.parseDouble(val));
+            case "useGlobalHough"         -> b.useGlobalHough(Boolean.parseBoolean(val));
             default -> throw new IllegalArgumentException("unknown --param key: " + key);
         }
     }

@@ -158,10 +158,30 @@ public final class ExteriorBitmap {
         if (!data[idx]) return;
         data[idx] = false;
         recordChanged(idx);
+        // Fast path: if no walls in the 8-neighborhood of (x,y), the cell sits
+        // in open exterior. Removing it cannot disconnect anything (4-conn
+        // alternative paths exist via the surrounding exterior cells). Skip
+        // the expensive verifyAnchor BFSes — critical for build scenarios
+        // where many walls are added in open space.
+        if (noWallsInNeighborhood(walls, x, y)) return;
         if (x > 0 && data[idx - 1]) verifyAnchor(walls, idx - 1);
         if (x < W - 1 && data[idx + 1]) verifyAnchor(walls, idx + 1);
         if (y > 0 && data[idx - W]) verifyAnchor(walls, idx - W);
         if (y < H - 1 && data[idx + W]) verifyAnchor(walls, idx + W);
+    }
+
+    private boolean noWallsInNeighborhood(WallGrid walls, int x, int y) {
+        for (int dy = -1; dy <= 1; dy++) {
+            int yy = y + dy;
+            if (yy < 0 || yy >= height) continue;
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0) continue;
+                int xx = x + dx;
+                if (xx < 0 || xx >= width) continue;
+                if (walls.get(xx, yy)) return false;
+            }
+        }
+        return true;
     }
 
     /**

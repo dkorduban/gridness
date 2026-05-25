@@ -13,3 +13,4 @@ wheels/
 # Keep experiments/log.jsonl in git but ignore the per-run artifact directories.
 experiments/*/
 !experiments/.gitkeep
+data/layouts_heatmaps_java_sweep/

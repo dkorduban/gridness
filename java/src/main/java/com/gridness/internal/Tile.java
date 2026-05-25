@@ -39,10 +39,12 @@ public final class Tile {
 
     /**
      * Recompute buildings + Hough angles from the current wall grid.
+     * If {@code globalAngles != null}, use those instead of running per-tile Hough.
      * Buildings get GLOBAL coordinates.
      */
     public void recompute(WallGrid walls, ExteriorBitmap exterior,
-                          HoughDetector hough, GridnessParams params) {
+                          HoughDetector hough, GridnessParams params,
+                          double[] globalAngles) {
         final int pad = params.extractionPad;
         int rectW = size + 2 * pad;
         int rectH = size + 2 * pad;
@@ -73,11 +75,15 @@ public final class Tile {
         }
         this.buildings = kept;
 
-        this.houghAngles = hough.dominantAngles(localWalls, rectW, rectH,
-                params.houghNumPeaks,
-                params.houghThresholdFrac,
-                params.houghMinPeakWeight,
-                params.houghMinAngleSepDeg);
+        if (globalAngles != null) {
+            this.houghAngles = globalAngles;
+        } else {
+            this.houghAngles = hough.dominantAngles(localWalls, rectW, rectH,
+                    params.houghNumPeaks,
+                    params.houghThresholdFrac,
+                    params.houghMinPeakWeight,
+                    params.houghMinAngleSepDeg);
+        }
         dirty = false;
     }
 }

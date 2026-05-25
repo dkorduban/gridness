@@ -188,18 +188,15 @@ def main() -> None:
         python_heatmap(name)
 
     sweep = []
-    for sf in [0.2, 0.3, 0.85]:
-        sw = round(1.0 - sf, 3)
-        params = {
-            "tileSize": 256, "tileStride": 256,
-            "houghMinPeakWeight": 30,
-            "shapeFloor": sf, "shapeWeight": sw,
-        }
-        tag = f"sf{sf}"
+    for params, tag in [
+        ({"tileSize": 32, "tileStride": 32, "houghMinPeakWeight": 18, "useGlobalHough": "true"}, "32_global"),
+        ({"tileSize": 32, "tileStride": 32, "houghMinPeakWeight": 18, "useGlobalHough": "false"}, "32_local"),
+        ({"tileSize": 256, "tileStride": 256, "houghMinPeakWeight": 18, "useGlobalHough": "true"}, "256_global"),
+    ]:
         out_dir = JAVA_TMP / tag
         run_java_dump(out_dir, params)
         m = score_combo(out_dir, verbose=True)
-        print(f"\n>>> {params}: {m}")
+        print(f"\n>>> {tag}: {m}")
         sweep.append((params, m))
 
     def show(title, key):

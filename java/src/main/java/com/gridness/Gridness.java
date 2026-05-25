@@ -1,6 +1,7 @@
 package com.gridness;
 
 import com.gridness.internal.ExteriorBitmap;
+import com.gridness.internal.GlobalHough;
 import com.gridness.internal.HoughDetector;
 import com.gridness.internal.SampleGrid;
 import com.gridness.internal.Tile;
@@ -36,6 +37,8 @@ public final class Gridness {
     private final SampleGrid samples;
     private final ExteriorBitmap exterior;
     private boolean exteriorDirty = true;
+    private final GlobalHough globalHough;
+    private boolean globalHoughDirtyFromLoad = true;
 
     public Gridness(int width, int height, GridnessParams params) {
         if (width <= 0 || height <= 0)
@@ -58,6 +61,7 @@ public final class Gridness {
         this.hough = new HoughDetector(params.houghThetaSteps);
         this.samples = new SampleGrid(width, height, params.sampleStride, tileGrid);
         this.exterior = new ExteriorBitmap(width, height);
+        this.globalHough = params.useGlobalHough ? new GlobalHough(width, height, params.houghThetaSteps) : null;
     }
 
     public int width() { return width; }
@@ -76,9 +80,11 @@ public final class Gridness {
         if (prev != value) {
             markTilesAndSamplesAffected(x, y);
             anyTileDirty = true;
-            // If the bitmap is already stale, defer to the full recompute in
-            // ensureClean. Otherwise apply the flip incrementally.
             if (!exteriorDirty) propagateExteriorEdit(x, y, prev, value);
+            if (globalHough != null && !globalHoughDirtyFromLoad) {
+                globalHough.applyEdit(x, y, prev, value);
+                // Defer angle-change check + global tile invalidation to ensureClean.
+            }
         }
     }
 
@@ -163,7 +169,18 @@ public final class Gridness {
         }
 
         boolean changed = false;
-        boolean exteriorWasDirty = exteriorDirty;
+        // Count distinct flipped cells first; if many, batch the exterior
+        // bitmap update by deferring to a single full recompute in ensureClean.
+        // This trades N small verify-BFSes for one global flood-fill,
+        // which is a win whenever N is large enough (typically >~10).
+        int distinctFlips = 0;
+        for (int h = 0; h < keys.length; h++) {
+            if (keys[h] == Long.MIN_VALUE) continue;
+            int x = (int) (keys[h] >>> 32);
+            int y = (int) keys[h];
+            if (walls.get(x, y) != (vals[h] == 1)) distinctFlips++;
+        }
+        boolean deferExterior = exteriorDirty || distinctFlips > 8;
         for (int h = 0; h < keys.length; h++) {
             if (keys[h] == Long.MIN_VALUE) continue;
             int x = (int) (keys[h] >>> 32);
@@ -172,11 +189,17 @@ public final class Gridness {
             boolean prev = walls.set(x, y, value);
             if (prev != value) {
                 markTilesAndSamplesAffected(x, y);
-                if (!exteriorWasDirty) propagateExteriorEdit(x, y, prev, value);
+                if (!deferExterior) propagateExteriorEdit(x, y, prev, value);
+                if (globalHough != null && !globalHoughDirtyFromLoad) {
+                    globalHough.applyEdit(x, y, prev, value);
+                }
                 changed = true;
             }
         }
-        if (changed) anyTileDirty = true;
+        if (changed) {
+            anyTileDirty = true;
+            if (deferExterior) exteriorDirty = true;
+        }
     }
 
     public void loadFromField(boolean[][] field) {
@@ -185,6 +208,7 @@ public final class Gridness {
         anyTileDirty = true;
         samples.markAllDirty();
         exteriorDirty = true;
+        if (globalHough != null) globalHoughDirtyFromLoad = true;
     }
 
     // ---------------- read ----------------
@@ -261,13 +285,40 @@ public final class Gridness {
 
     // ---------------- recompute pipeline ----------------
 
+    private double[] cachedGlobalAngles = null;
+
     private void ensureClean() {
         if (exteriorDirty) {
             exterior.recompute(walls);
             exteriorDirty = false;
         }
+        if (globalHough != null) {
+            if (globalHoughDirtyFromLoad) {
+                globalHough.recompute(walls);
+                globalHoughDirtyFromLoad = false;
+                cachedGlobalAngles = null;  // force angle refresh below
+            }
+            double[] newAngles = globalHough.dominantAngles(
+                    params.houghNumPeaks, params.houghThresholdFrac,
+                    params.houghMinPeakWeight, params.houghMinAngleSepDeg);
+            if (!angleArraysEqual(cachedGlobalAngles, newAngles)) {
+                cachedGlobalAngles = newAngles;
+                // Angles changed → every tile's stored angles + every sample's
+                // score depend on them. Full invalidation.
+                Arrays.fill(tileDirty, true);
+                anyTileDirty = true;
+                samples.markAllDirty();
+            }
+        }
         if (anyTileDirty) recomputeDirtyTiles();
         if (samples.anyDirty()) recomputeDirtySamples();
+    }
+
+    private static boolean angleArraysEqual(double[] a, double[] b) {
+        if (a == null || b == null) return a == b;
+        if (a.length != b.length) return false;
+        for (int i = 0; i < a.length; i++) if (a[i] != b[i]) return false;
+        return true;
     }
 
     private void recomputeDirtyTiles() {
@@ -277,13 +328,14 @@ public final class Gridness {
         for (int i = 0; i < n; i++) if (tileDirty[i]) { dirtyList[dn++] = i; tileDirty[i] = false; }
         anyTileDirty = false;
         if (dn == 0) return;
+        final double[] anglesForTiles = cachedGlobalAngles;  // null when global Hough off
         if (params.parallel && dn > 1) {
             final int dnF = dn;
             ForkJoinPool.commonPool().submit(() -> IntStream.range(0, dnF).parallel().forEach(k -> {
-                tiles[dirtyList[k]].recompute(walls, exterior, hough, params);
+                tiles[dirtyList[k]].recompute(walls, exterior, hough, params, anglesForTiles);
             })).join();
         } else {
-            for (int k = 0; k < dn; k++) tiles[dirtyList[k]].recompute(walls, exterior, hough, params);
+            for (int k = 0; k < dn; k++) tiles[dirtyList[k]].recompute(walls, exterior, hough, params, anglesForTiles);
         }
     }
 

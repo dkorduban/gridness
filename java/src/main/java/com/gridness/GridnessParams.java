@@ -47,6 +47,15 @@ public final class GridnessParams {
      */
     public final double boundaryClipPercentile;
 
+    /**
+     * If true, compute Hough angles ONCE per layout (over the full wall grid),
+     * and have all tiles share the same angle set. Matches the Python
+     * prototype's behavior and dramatically improves heatmap-distribution
+     * agreement on layouts where per-tile Hough is too noisy. Adds ~50μs per
+     * edit for accumulator maintenance — independent of field size.
+     */
+    public final boolean useGlobalHough;
+
     public final boolean parallel;
 
     private GridnessParams(Builder b) {
@@ -71,6 +80,7 @@ public final class GridnessParams {
         this.shapeFloor = b.shapeFloor;
         this.shapeWeight = b.shapeWeight;
         this.boundaryClipPercentile = b.boundaryClipPercentile;
+        this.useGlobalHough = b.useGlobalHough;
         this.parallel = b.parallel;
         validate();
     }
@@ -135,6 +145,7 @@ public final class GridnessParams {
         private double shapeFloor = 0.85;
         private double shapeWeight = 0.15;
         private double boundaryClipPercentile = 0.0;
+        private boolean useGlobalHough = false;
 
         private boolean parallel = true;
 
@@ -159,6 +170,7 @@ public final class GridnessParams {
         public Builder shapeFloor(double v) { this.shapeFloor = v; return this; }
         public Builder shapeWeight(double v) { this.shapeWeight = v; return this; }
         public Builder boundaryClipPercentile(double v) { this.boundaryClipPercentile = v; return this; }
+        public Builder useGlobalHough(boolean v) { this.useGlobalHough = v; return this; }
         public Builder parallel(boolean v) { this.parallel = v; return this; }
 
         public GridnessParams build() { return new GridnessParams(this); }
