@@ -31,16 +31,23 @@ public final class HeatmapDumper {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
-            System.err.println("usage: HeatmapDumper <out-dir> <fixture-1> [<fixture-2> ...]");
+            System.err.println("usage: HeatmapDumper [--dir <fixture-dir>] <out-dir> <fixture-1> [<fixture-2> ...]");
             System.exit(2);
         }
-        Path outDir = Paths.get(args[0]);
+        Path fxDir = LayoutFixture.defaultDir();
+        List<String> rest = new ArrayList<>();
+        for (int i = 0; i < args.length; i++) {
+            if ("--dir".equals(args[i])) { fxDir = Paths.get(args[++i]); continue; }
+            rest.add(args[i]);
+        }
+        if (rest.size() < 2) {
+            System.err.println("missing out-dir or fixtures");
+            System.exit(2);
+        }
+        Path outDir = Paths.get(rest.get(0));
         Files.createDirectories(outDir);
 
-        List<String> names = new ArrayList<>();
-        for (int i = 1; i < args.length; i++) names.add(args[i]);
-
-        Path fxDir = LayoutFixture.defaultDir();
+        List<String> names = new ArrayList<>(rest.subList(1, rest.size()));
         GridnessParams defaults = GridnessParams.defaults();
 
         for (String name : names) {
