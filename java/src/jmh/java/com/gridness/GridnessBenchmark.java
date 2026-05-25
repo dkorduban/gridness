@@ -182,6 +182,41 @@ public class GridnessBenchmark {
         return s.g.valueAt(s.sampleX, s.sampleY);
     }
 
+    /**
+     * Minimal single-pixel benchmark — mirrors the old "flip 1 random cell on
+     * a freshly-clean field" measurement so we can compare apples to apples
+     * with the historical 0.6 ms/op number. Per-invocation setup reloads
+     * a clean Gridness, so each invocation measures exactly: one setPixel +
+     * one ensureClean + one valueAt.
+     */
+    @State(Scope.Benchmark)
+    public static class SinglePixelState {
+        @Param({"grid_uniform_256", "city_768"})
+        public String fixture;
+        Gridness g;
+        LayoutFixture fx;
+        Random rng;
+
+        @Setup(Level.Trial)
+        public void trial() throws Exception {
+            fx = LayoutFixture.load(LayoutFixture.defaultDir(), fixture);
+            rng = new Random(42);
+        }
+
+        @Setup(Level.Invocation)
+        public void invocation() {
+            g = new Gridness(fx.width, fx.height, GridnessParams.defaults());
+            g.loadFromField(fx.raster);
+            g.valueAt(fx.width / 2, fx.height / 2);
+        }
+    }
+
+    @Benchmark
+    public double singlePixelOnClean(SinglePixelState s) {
+        s.g.setPixel(s.rng.nextInt(s.fx.width), s.rng.nextInt(s.fx.height));
+        return s.g.valueAt(s.fx.width / 2, s.fx.height / 2);
+    }
+
     /** Baseline: cost of a full from-scratch evaluation. */
     @State(Scope.Benchmark)
     public static class FromScratchState {

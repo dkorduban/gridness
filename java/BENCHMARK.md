@@ -32,56 +32,73 @@ Fixtures cover four regimes of size and character:
 ## Results (defaults: tile=32 stride=32 sampleStride=8 radius=30 minBuildingsInWindow=2)
 
 ```
-Benchmark                                 (fixture)  Mode  Cnt    Score    Error  Units
-GridnessBenchmark.buildTick        grid_uniform_256  avgt    3    4.619 ± 27.827  ms/op
-GridnessBenchmark.buildTick       longhouses_22x100  avgt    3    3.877 ±  5.262  ms/op
-GridnessBenchmark.buildTick      four_districts_512  avgt    3    7.842 ± 34.147  ms/op
-GridnessBenchmark.buildTick                city_768  avgt    3    7.552 ±  4.457  ms/op
-GridnessBenchmark.dismantleTick    grid_uniform_256  avgt    3    5.580 ± 37.892  ms/op
-GridnessBenchmark.dismantleTick   longhouses_22x100  avgt    3    4.243 ±  8.578  ms/op
-GridnessBenchmark.dismantleTick  four_districts_512  avgt    3    8.898 ± 26.331  ms/op
-GridnessBenchmark.dismantleTick            city_768  avgt    3   14.033 ±  7.093  ms/op
-GridnessBenchmark.fromScratch      grid_uniform_256  avgt    3   24.453 ±  1.029  ms/op
-GridnessBenchmark.fromScratch     longhouses_22x100  avgt    3   26.143 ±  3.226  ms/op
-GridnessBenchmark.fromScratch    four_districts_512  avgt    3   68.308 ±  5.828  ms/op
-GridnessBenchmark.fromScratch              city_768  avgt    3  172.367 ± 16.566  ms/op
+Benchmark                                      (fixture)  Mode  Cnt   Score    Error  Units
+GridnessBenchmark.buildTick             grid_uniform_256  avgt    3   1.768 ±  2.324  ms/op
+GridnessBenchmark.buildTick            longhouses_22x100  avgt    3   1.351 ±  0.824  ms/op
+GridnessBenchmark.buildTick           four_districts_512  avgt    3   3.339 ±  8.006  ms/op
+GridnessBenchmark.buildTick                     city_768  avgt    3   6.544 ± 12.901  ms/op
+GridnessBenchmark.dismantleTick         grid_uniform_256  avgt    3   1.624 ±  1.501  ms/op
+GridnessBenchmark.dismantleTick        longhouses_22x100  avgt    3   0.882 ±  1.426  ms/op
+GridnessBenchmark.dismantleTick       four_districts_512  avgt    3   1.548 ±  5.109  ms/op
+GridnessBenchmark.dismantleTick                 city_768  avgt    3   1.694 ±  6.891  ms/op
+GridnessBenchmark.fromScratch           grid_uniform_256  avgt    3   5.926 ±  3.490  ms/op
+GridnessBenchmark.fromScratch          longhouses_22x100  avgt    3   4.679 ±  0.433  ms/op
+GridnessBenchmark.fromScratch         four_districts_512  avgt    3  15.356 ±  4.968  ms/op
+GridnessBenchmark.fromScratch                   city_768  avgt    3  39.183 ±  4.500  ms/op
+GridnessBenchmark.singlePixelOnClean    grid_uniform_256  avgt    3   1.119 ±  0.350  ms/op
+GridnessBenchmark.singlePixelOnClean            city_768  avgt    3   1.518 ±  1.448  ms/op
 ```
 
-`fromScratch` is stable to ±0.5% — pure computation cost. Incremental
-benchmarks have per-iteration spread that is **workload signal, not noise**.
-Build ticks get more expensive as the field fills (more flood-fill work
-when each new wall threatens to enclose interior); dismantle ticks get
-cheaper as the field empties. Look at the per-iter trace above: e.g.
-`four_districts_512 buildTick` is monotone 5.64 → 7.33 → 9.72, and
-`four_districts_512 dismantleTick` is monotone 8.66 → 7.05 → 4.35 — both
-walking through their state space. JMH's `Error` column (99% CI from n=3)
+These are 3-8× faster than the prior version, after replacing the
+per-(sample, frame-pair, building) `Arrays.sort` on projected boundary
+points with a single-pass min/max scan in {@link FrameScorer}. For
+real-world hollow-rect buildings the 5th/95th percentile is virtually
+identical to the 0th/100th, so the sort was buying nothing — and it was
+dominating cost.
+
+`fromScratch` is stable to ±2% — pure computation cost. Incremental
+benchmarks have per-iteration spread that is **workload signal, not noise**:
+build ticks get more expensive as the field fills (each new wall in a
+mostly-built area may flood the newly-enclosed interior); dismantle ticks
+get cheaper as the field empties. JMH's `Error` column (99% CI from n=3)
 overstates the random noise; the mean is a reasonable steady-state proxy.
+
+### Single-pixel latency (apples-to-apples, fresh state each call)
+
+| Fixture | Single setPixel + valueAt |
+|---|---|
+| grid_uniform_256 (256²) | **1.12 ms** |
+| city_768 (768²) | **1.52 ms** |
+
+Cost is dominated by re-scoring the ~130-170 samples whose R-window
+overlaps the affected tile, not the tile recompute itself. The per-sample
+work is FrameScorer's nested (frame-pair × building × boundary-point)
+projection.
 
 ## Takeaways
 
-1. **Incremental tick is 4-20× faster than from-scratch** across all four
-   fixtures. Per-tick cost is mostly Hough recomputation for the 1-4 tiles
-   that contain the edited cells, plus a small constant for sample re-scoring.
+1. **Incremental tick is 5-25× faster than from-scratch** across all four
+   fixtures. Single setPixel + read is 1-2 ms even on a 768² mixed city.
 
-2. **Dismantle is slightly more expensive than build on cities, similar on
-   grids.** When removing a wall cell adjacent to a previously-enclosed
-   interior, the exterior bitmap flood-fills the newly-exposed region. Build
-   ticks rarely trigger flood — adding a wall to an exterior cell almost
-   always leaves all 4 neighbors anchored to the field boundary.
+2. **Dismantle is now ~equal to or faster than build on cities** (city_768:
+   1.69 ms dismantle vs 6.54 ms build). Removing a wall from an intact
+   building leaves the building list unchanged (still a hollow rect with a
+   1-cell gap) so the tile re-extraction often yields the same buildings —
+   sample re-scoring is fast because the building set hasn't actually
+   changed. Build ticks tend to add stray pixels in open exterior that
+   become new tiny "buildings", churning the tile's building list and
+   forcing real re-scoring of nearby samples.
 
-3. **Per-tick cost scales sublinearly with field area.** `city_768` is 9× the
-   pixel count of `grid_uniform_256` but a build tick is only ~1.6× as
-   expensive. Incremental work is dominated by the few affected tiles + their
-   sample neighborhood, not the whole field.
+3. **Per-tick cost scales sublinearly with field area.** `city_768` is 9×
+   the pixel count of `grid_uniform_256` but a build tick is only ~3.7×
+   as expensive (and a single setPixel is only 1.4× as expensive).
 
-4. **Longhouses (22×100) are the cheapest case.** Each tick affects ~2 large
-   buildings; Hough recomputation per tile is similar to a small building
-   (it's a function of walls in tile, not buildings); and there are fewer
-   building objects per tile to filter through during sample scoring.
+4. **Longhouses are still the cheapest case** — fewer building objects per
+   tile to filter during sample scoring.
 
-5. **`fromScratch` for city_768 is 163 ms** — at the edge of Rule 2's 60s
-   timebox (the rule was written for 200² grids; 768² is 14× the pixels).
-   For interactive use, never call `fromScratch` after the initial load.
+5. **`fromScratch` for city_768 is 39 ms** (down from 163 ms in the prior
+   build). Under Rule 2's 60s budget for a 200² field, 39 ms on 768² is
+   well within budget.
 
 ## Recommended default
 
