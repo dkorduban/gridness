@@ -180,23 +180,27 @@ def main() -> None:
         python_heatmap(name)
 
     sweep = []
-    for min_b in [3, 4]:
-        for hpw in [15, 18, 22]:
-            for req_lines in [2, 3]:
-                for min_dist in [2, 3]:
-                    params = {
-                        "minBuildingsInWindow": min_b,
-                        "houghMinPeakWeight": hpw,
-                        "requiredLinesPerAxis": req_lines,
-                        "minDistinctBuildings": min_dist,
-                    }
-                    tag = f"min{min_b}_hpw{hpw}_req{req_lines}_md{min_dist}"
-                    out_dir = JAVA_TMP / tag
-                    print(f"\nrunning Java with {params} -> {out_dir}")
-                    run_java_dump(out_dir, params)
-                    m = score_combo(out_dir)
-                    print(f"  {m}")
-                    sweep.append((params, m))
+    # Sweep (shape_floor, shape_weight=1-floor) to penalize non-rect layouts
+    # like hexagonal. Java's current shape penalty is shape_floor=0.85,
+    # shape_weight=0.15 — only docks a hex (rect≈0.75) by 4%. Pushing
+    # shape_floor down to 0.4 with weight=0.6 means a hex gets ~15% penalty.
+    for shape_floor in [0.4, 0.6, 0.7, 0.85]:
+        shape_weight = round(1.0 - shape_floor, 3)
+        for hpw in [12, 15, 18]:
+            for clip in [0.0, 0.05]:
+                params = {
+                    "shapeFloor": shape_floor,
+                    "shapeWeight": shape_weight,
+                    "houghMinPeakWeight": hpw,
+                    "boundaryClipPercentile": clip,
+                }
+                tag = f"sf{shape_floor}_sw{shape_weight}_hpw{hpw}_clip{clip}"
+                out_dir = JAVA_TMP / tag
+                print(f"\nrunning Java {params}")
+                run_java_dump(out_dir, params)
+                m = score_combo(out_dir)
+                print(f"  {m}")
+                sweep.append((params, m))
 
     def show(title, key):
         print(f"\n=== ranked by {title} ===")

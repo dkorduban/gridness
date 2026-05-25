@@ -38,6 +38,15 @@ public final class GridnessParams {
     public final double shapeFloor;
     public final double shapeWeight;
 
+    /**
+     * Fractional clip on each building's projected boundary points before
+     * cluster scoring. 0.0 = min/max (cheapest, default); 0.05 = use 5th/95th
+     * percentile (matches Python prototype; rejects boundary-pixel outliers
+     * which makes the per-building extent tighter and reduces spurious snap
+     * scores on non-rectangular layouts like hexagonal).
+     */
+    public final double boundaryClipPercentile;
+
     public final boolean parallel;
 
     private GridnessParams(Builder b) {
@@ -61,6 +70,7 @@ public final class GridnessParams {
         this.minBuildingArea = b.minBuildingArea;
         this.shapeFloor = b.shapeFloor;
         this.shapeWeight = b.shapeWeight;
+        this.boundaryClipPercentile = b.boundaryClipPercentile;
         this.parallel = b.parallel;
         validate();
     }
@@ -124,6 +134,7 @@ public final class GridnessParams {
 
         private double shapeFloor = 0.85;
         private double shapeWeight = 0.15;
+        private double boundaryClipPercentile = 0.0;
 
         private boolean parallel = true;
 
@@ -147,6 +158,7 @@ public final class GridnessParams {
         public Builder minBuildingArea(int v) { this.minBuildingArea = v; return this; }
         public Builder shapeFloor(double v) { this.shapeFloor = v; return this; }
         public Builder shapeWeight(double v) { this.shapeWeight = v; return this; }
+        public Builder boundaryClipPercentile(double v) { this.boundaryClipPercentile = v; return this; }
         public Builder parallel(boolean v) { this.parallel = v; return this; }
 
         public GridnessParams build() { return new GridnessParams(this); }

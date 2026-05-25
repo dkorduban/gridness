@@ -67,33 +67,49 @@ public final class FrameScorer {
                 double m10 = -ay * invDet;
                 double m11 = ax * invDet;
 
+                double clip = p.boundaryClipPercentile;
                 for (int bi = 0; bi < n; bi++) {
                     Building bld = buildings.get(bi);
                     int[] bd = bld.boundary;
                     int len = bd.length >>> 1;
                     if (len == 0) { uLo[bi] = uHi[bi] = vLo[bi] = vHi[bi] = 0; continue; }
-                    // Project boundary into (u,v) and take min/max in a single
-                    // pass. The previous version allocated two double[len]
-                    // arrays + Arrays.sort then read the 5th/95th percentile;
-                    // for the hollow rect buildings used in practice the
-                    // 0/100th percentile is virtually identical (no outliers)
-                    // and is ~10x cheaper.
-                    double uMin = Double.POSITIVE_INFINITY, uMax = Double.NEGATIVE_INFINITY;
-                    double vMin = Double.POSITIVE_INFINITY, vMax = Double.NEGATIVE_INFINITY;
-                    for (int k = 0; k < len; k++) {
-                        double x = bd[2 * k];
-                        double y = bd[2 * k + 1];
-                        double uu = m00 * x + m01 * y;
-                        double vv = m10 * x + m11 * y;
-                        if (uu < uMin) uMin = uu;
-                        if (uu > uMax) uMax = uu;
-                        if (vv < vMin) vMin = vv;
-                        if (vv > vMax) vMax = vv;
+                    if (clip <= 0.0) {
+                        // Fast path: min/max — equivalent to 0/100th percentile.
+                        double uMin = Double.POSITIVE_INFINITY, uMax = Double.NEGATIVE_INFINITY;
+                        double vMin = Double.POSITIVE_INFINITY, vMax = Double.NEGATIVE_INFINITY;
+                        for (int k = 0; k < len; k++) {
+                            double x = bd[2 * k];
+                            double y = bd[2 * k + 1];
+                            double uu = m00 * x + m01 * y;
+                            double vv = m10 * x + m11 * y;
+                            if (uu < uMin) uMin = uu;
+                            if (uu > uMax) uMax = uu;
+                            if (vv < vMin) vMin = vv;
+                            if (vv > vMax) vMax = vv;
+                        }
+                        uLo[bi] = uMin; uHi[bi] = uMax;
+                        vLo[bi] = vMin; vHi[bi] = vMax;
+                    } else {
+                        // Python-compat path: project + sort + take clip/1-clip
+                        // percentiles. Rejects outlier boundary pixels —
+                        // tightens each building's projected extent, makes the
+                        // cluster scoring less forgiving on non-rectangular
+                        // layouts (hexagonal, rounded corners, organic).
+                        double[] u = new double[len];
+                        double[] v = new double[len];
+                        for (int k = 0; k < len; k++) {
+                            double x = bd[2 * k];
+                            double y = bd[2 * k + 1];
+                            u[k] = m00 * x + m01 * y;
+                            v[k] = m10 * x + m11 * y;
+                        }
+                        java.util.Arrays.sort(u);
+                        java.util.Arrays.sort(v);
+                        int loIdx = (int) Math.max(0, Math.floor(clip * (len - 1)));
+                        int hiIdx = (int) Math.min(len - 1, Math.ceil((1.0 - clip) * (len - 1)));
+                        uLo[bi] = u[loIdx]; uHi[bi] = u[hiIdx];
+                        vLo[bi] = v[loIdx]; vHi[bi] = v[hiIdx];
                     }
-                    uLo[bi] = uMin;
-                    uHi[bi] = uMax;
-                    vLo[bi] = vMin;
-                    vHi[bi] = vMax;
                 }
 
                 for (int bi = 0; bi < n; bi++) {

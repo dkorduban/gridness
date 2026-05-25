@@ -108,6 +108,7 @@ public final class HeatmapDumper {
             case "minBuildingArea"        -> b.minBuildingArea(Integer.parseInt(val));
             case "shapeFloor"             -> b.shapeFloor(Double.parseDouble(val));
             case "shapeWeight"            -> b.shapeWeight(Double.parseDouble(val));
+            case "boundaryClipPercentile" -> b.boundaryClipPercentile(Double.parseDouble(val));
             default -> throw new IllegalArgumentException("unknown --param key: " + key);
         }
     }
