@@ -3,7 +3,7 @@ plugins {
     id("me.champeau.jmh") version "0.7.2"
 }
 
-group = "com.gridness"
+group = "com.dkorduban.gridness"
 version = "0.1.0"
 
 java {
@@ -54,7 +54,7 @@ tasks.register<JavaExec>("viewer") {
     description = "Launch the Swing live viewer (walls + heatmap + per-tick latency)."
     group = "application"
     classpath = sourceSets["main"].runtimeClasspath
-    mainClass.set("com.gridness.viz.GridnessViewer")
+    mainClass.set("com.dkorduban.gridness.viz.GridnessViewer")
     // Pass-through args: gradle viewer --args="city_768 build"
     standardInput = System.`in`
 }
@@ -63,5 +63,5 @@ tasks.register<JavaExec>("dumpHeatmaps") {
     description = "Compute Java's gridness heatmap for each named fixture and write text files."
     group = "application"
     classpath = sourceSets["main"].runtimeClasspath
-    mainClass.set("com.gridness.viz.HeatmapDumper")
+    mainClass.set("com.dkorduban.gridness.viz.HeatmapDumper")
 }

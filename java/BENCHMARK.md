@@ -20,7 +20,7 @@ Both `buildTick` and `dismantleTick` model this:
   dismantled), the field is reset to its initial state. The reset cost is
   amortized into the iteration average.
 
-The reusable simulator lives at {@code com.gridness.sim.BuildSim}; the
+The reusable simulator lives at {@code com.dkorduban.gridness.sim.BuildSim}; the
 viewer uses the same defaults.
 
 `buildTick` starts from an empty field; cells flip false→true. `dismantleTick`
