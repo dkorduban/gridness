@@ -1,9 +1,9 @@
 """6-column comparison per layout:
-  walls | Python v3 | Java tile=32 (defaults, fast) | tile=64 | tile=128 | tile=256 (matching)
+  walls | Python v3 | Java tile=32 (defaults, fast) | tile=64 hpw=38 | tile=128 hpw=45 | tile=256 (matching)
 
-All Java configs use houghMinPeakWeight=30 except tile=32 which uses the
-shipped default of 18 (the "fast" deployed config). All other params at
-GridnessParams.defaults().
+tile=64/128 hpw values were tuned by sweep_java_params.py to suppress false
+positives on scattered/organic layouts. tile=32 and tile=256 use their
+respective shipped defaults / matching-config values.
 
 Output: data/comparison_grid_4cols.png
 """
@@ -38,10 +38,10 @@ LAYOUTS = [
 ]
 
 JAVA_CONFIGS = [
-    ("tile=32",  Path("data/layouts_heatmaps_java")),
-    ("tile=64",  Path("data/layouts_heatmaps_java_tile64")),
-    ("tile=128", Path("data/layouts_heatmaps_java_tile128")),
-    ("tile=256", Path("data/layouts_heatmaps_java_matching")),
+    ("tile=32",        Path("data/layouts_heatmaps_java")),
+    ("tile=64 hpw=38", Path("data/layouts_heatmaps_java_sweep/tile64_hpw38")),
+    ("tile=128 hpw=45", Path("data/layouts_heatmaps_java_sweep/tile128_hpw45")),
+    ("tile=256",       Path("data/layouts_heatmaps_java_matching")),
 ]
 
 
