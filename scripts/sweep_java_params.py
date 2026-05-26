@@ -193,9 +193,11 @@ def main() -> None:
     # Hough max accum in a tile-local Hough scales with tile size (a perfect
     # line of length T contributes T votes), so hpw should too.
     configs = []
-    for hpw in [30, 50, 70, 100, 150]:
+    # Sweep showed sharp cliff: tile=64 hpw=50 already nukes good cases.
+    # Probe transition zone in finer detail to find a sweet spot.
+    for hpw in [30, 35, 38, 40, 42, 45]:
         configs.append((64, hpw))
-    for hpw in [30, 60, 100, 150, 220, 300]:
+    for hpw in [30, 35, 40, 45, 50, 55]:
         configs.append((128, hpw))
     for tile, hpw in configs:
         params = {
