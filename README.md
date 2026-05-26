@@ -24,8 +24,8 @@ match Python with mean L1 ≈ 0.11 per pixel (heatmap values are in
 ![comparison grid](data/comparison_grid_4cols.png)
 
 > The figure above shows, for each of 27 synthetic layouts, the gridness
-> heatmap with walls overlaid in black: Python reference vs four Java
-> tile-size configurations.
+> heatmap with walls overlaid in black: Python reference vs the three
+> Java presets (fast, balanced — default, high fidelity).
 
 ---
 
@@ -299,14 +299,15 @@ fixture set).
 | `useGlobalHough` | false | use one whole-field Hough instead of per-tile Hough | Matches Python exactly; adds ~50 µs/edit. Mostly useful for closer Python parity, rarely worth it in production. |
 | `parallel` | true | use the `ForkJoinPool.commonPool()` for tile + sample recompute | Turn off for deterministic single-threaded runs. |
 
-### Recommended presets
+### Named presets
 
-- **`GridnessParams.defaults()`** — `tileSize=128 hpw=45`. Best Python
-  match while staying under ~1.5 ms per single-cell edit on 768².
-- **Fast** — `tileSize(32).tileStride(32).houghMinPeakWeight(18)`. ~3×
+- **`fast`** — `tileSize(32).tileStride(32).houghMinPeakWeight(18)`. ~3×
   faster per single-cell edit but slightly noisier and gets some false
-  positives on scattered layouts. The previous default.
-- **High fidelity** — `tileSize(256).tileStride(256)
+  positives on scattered layouts.
+- **`balanced`** *(default — `GridnessParams.defaults()`)* —
+  `tileSize=128 hpw=45`. Best Python match while staying under ~1.5 ms
+  per single-cell edit on 768².
+- **`high fidelity`** — `tileSize(256).tileStride(256)
   .houghMinPeakWeight(30).boundaryClipPercentile(0.05)
   .useGlobalHough(true)`. Closest to Python (mean L1 ≈ 0.08); too slow
   for live editing but fine for offline analysis.
@@ -420,7 +421,7 @@ JMH, JDK 21, WSL2 dev box. 2 × 3 s warmup, 3 × 3 s measurement, fork 1.
 "Build tick" = `applyBatch` of ~30 cells (3 in-progress buildings × ~10
 workers each) + a forced `valueAt` to drive `ensureClean`.
 
-### At the new defaults (`tileSize=128 hpw=45`)
+### `balanced` preset — default (`tileSize=128 hpw=45`)
 
 | Benchmark | grid_uniform_256 | longhouses_22x100 | four_districts_512 | city_768 |
 |---|---:|---:|---:|---:|
@@ -429,7 +430,7 @@ workers each) + a forced `valueAt` to drive `ensureClean`.
 | `dismantleTick` | 1.51 ms | 1.10 ms | 2.65 ms | **4.81 ms** |
 | `fromScratch` | 2.09 ms | 1.57 ms | 4.55 ms | 13.48 ms |
 
-### At the old fast defaults (`tileSize=32 hpw=18`)
+### `fast` preset (`tileSize=32 hpw=18`)
 
 | Benchmark | grid_uniform_256 | longhouses_22x100 | four_districts_512 | city_768 |
 |---|---:|---:|---:|---:|
@@ -441,13 +442,12 @@ workers each) + a forced `valueAt` to drive `ensureClean`.
 
 | Config | mean L1 |
 |---|---:|
-| `tileSize=32 hpw=18` (old default) | 0.123 |
-| `tileSize=64 hpw=38` | 0.239 |
-| **`tileSize=128 hpw=45`** (default) | **0.108** |
-| `tileSize=256 hpw=30` (gold) | 0.080 |
+| `fast` — `tileSize=32 hpw=18` | 0.123 |
+| **`balanced` — `tileSize=128 hpw=45` (default)** | **0.108** |
+| `high fidelity` — `tileSize=256 hpw=30` | 0.080 |
 
-The new defaults trade ~3× per-edit cost for the best per-pixel
-agreement with the Python reference and remove the false-positive
+The balanced default trades ~3× per-edit cost over `fast` for the best
+per-pixel agreement with the Python reference and removes the false-positive
 hotspots on scattered/organic layouts (e.g. `rect_scattered`,
 `organic_walks`). The full sweep is in
 `scripts/sweep_java_params.py`; older numbers and per-cell breakdown

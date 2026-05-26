@@ -188,15 +188,10 @@ def main() -> None:
         python_heatmap(name)
 
     sweep = []
-    # Sweep hpw at tile=64 and tile=128, find the value that rejects false
-    # positives on scattered/organic layouts without hurting grid layouts.
-    # Hough max accum in a tile-local Hough scales with tile size (a perfect
-    # line of length T contributes T votes), so hpw should too.
+    # hpw should scale with tile size — a perfect line of length T contributes
+    # ~T votes to the per-tile Hough accumulator. Sweep finer around the
+    # tile=128 sweet spot (45 in the shipped defaults).
     configs = []
-    # Sweep showed sharp cliff: tile=64 hpw=50 already nukes good cases.
-    # Probe transition zone in finer detail to find a sweet spot.
-    for hpw in [30, 35, 38, 40, 42, 45]:
-        configs.append((64, hpw))
     for hpw in [30, 35, 40, 45, 50, 55]:
         configs.append((128, hpw))
     for tile, hpw in configs:
