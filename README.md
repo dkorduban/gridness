@@ -557,12 +557,4 @@ gridness/
 
 ## License & attribution
 
-Apache License 2.0 — see [LICENSE](LICENSE).
-
-This project includes a `NOTICE` file. Per § 4(d) of the license, any
-redistribution (Source, Object, or derivative) **must** include a
-readable copy of the NOTICE file with the attribution to
-**Dmytro Korduban** preserved. See [NOTICE](NOTICE) for the exact text.
-
-If you build a tool, mod, or product on top of this, credit is
-required; pull requests are welcome.
+Apache License 2.0 — see [LICENSE](LICENSE). See [NOTICE](NOTICE) for attribution requirements.
