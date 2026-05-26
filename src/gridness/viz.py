@@ -81,3 +81,15 @@ def _building_overlay(raster: np.ndarray, buildings: list[Building]) -> np.ndarr
             if 0 <= yi < H and 0 <= xi < W:
                 rgb[yi, xi] = [1.0, 0.2, 0.2]
     return np.clip(rgb, 0, 1)
+
+
+def walls_overlay_rgba(walls: np.ndarray) -> np.ndarray:
+    """RGBA image where wall cells are opaque black and non-wall cells are
+    fully transparent. Meant to be drawn on top of a heatmap via a second
+    ax.imshow call with interpolation='nearest' to keep the wall pixels
+    crisp."""
+    H, W = walls.shape
+    rgba = np.zeros((H, W, 4), dtype=float)
+    mask = walls.astype(bool)
+    rgba[mask, 3] = 1.0
+    return rgba

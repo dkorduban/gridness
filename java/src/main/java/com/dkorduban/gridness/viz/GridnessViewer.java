@@ -30,8 +30,7 @@ public final class GridnessViewer extends JFrame {
     private static final int REPAINT_HZ = 30;
     private static final int STATS_WINDOW = 1024;
 
-    private final WallPanel wallPanel;
-    private final HeatmapPanel heatmapPanel;
+    private final FusedPanel fusedPanel;
     private final StatsPanel statsPanel;
     private final SimThread simThread;
 
@@ -39,27 +38,21 @@ public final class GridnessViewer extends JFrame {
         super("gridness viewer  —  " + fx.name + "  (" + fx.width + "x" + fx.height + ")");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
 
-        wallPanel = new WallPanel(fx.width, fx.height);
-        heatmapPanel = new HeatmapPanel(fx.width, fx.height);
+        fusedPanel = new FusedPanel(fx.width, fx.height);
         statsPanel = new StatsPanel();
 
-        JPanel viz = new JPanel(new GridLayout(1, 2, 8, 0));
-        viz.add(wrapWithLabel("walls", wallPanel));
-        viz.add(wrapWithLabel("gridness heatmap", heatmapPanel));
-
         setLayout(new BorderLayout(0, 8));
-        add(viz, BorderLayout.CENTER);
+        add(wrapWithLabel("walls + gridness heatmap (fused)", fusedPanel), BorderLayout.CENTER);
         add(statsPanel, BorderLayout.SOUTH);
 
         pack();
         setLocationRelativeTo(null);
 
         simThread = new SimThread(fx, parseMode(modeArg), "cycle".equalsIgnoreCase(modeArg),
-                wallPanel, heatmapPanel, statsPanel);
+                fusedPanel, statsPanel);
 
         Timer timer = new Timer(1000 / REPAINT_HZ, e -> {
-            wallPanel.repaint();
-            heatmapPanel.repaint();
+            fusedPanel.repaint();
             statsPanel.refresh();
         });
         timer.start();
@@ -129,22 +122,12 @@ public final class GridnessViewer extends JFrame {
         int W = fx.width, H = fx.height;
         int pad = 8;
         int statsH = 140;
-        BufferedImage composed = new BufferedImage(W * 2 + pad * 3, H + pad * 2 + statsH, BufferedImage.TYPE_INT_RGB);
+        BufferedImage composed = new BufferedImage(W + pad * 2, H + pad * 2 + statsH, BufferedImage.TYPE_INT_RGB);
         Graphics2D g2 = composed.createGraphics();
         g2.setColor(new Color(20, 20, 24));
         g2.fillRect(0, 0, composed.getWidth(), composed.getHeight());
 
-        // Walls
-        int[] wpix = new int[W * H];
-        for (int y = 0; y < H; y++) {
-            int base = y * W;
-            for (int x = 0; x < W; x++) wpix[base + x] = g.isWall(x, y) ? 0x202028 : 0xeeeeee;
-        }
-        BufferedImage wallsImg = new BufferedImage(W, H, BufferedImage.TYPE_INT_RGB);
-        wallsImg.setRGB(0, 0, W, H, wpix, 0, W);
-        g2.drawImage(wallsImg, pad, pad, null);
-
-        // Heatmap
+        // Fused: heatmap bilinear-upsampled, then walls overlaid at full resolution.
         double[][] heat = g.readRect(0, 0, W, H);
         int ny = heat.length, nx = ny > 0 ? heat[0].length : 0;
         BufferedImage heatImg = new BufferedImage(nx, ny, BufferedImage.TYPE_INT_RGB);
@@ -154,7 +137,17 @@ public final class GridnessViewer extends JFrame {
         }
         heatImg.setRGB(0, 0, nx, ny, hpix, 0, nx);
         g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        g2.drawImage(heatImg, W + 2 * pad, pad, W, H, null);
+        g2.drawImage(heatImg, pad, pad, W, H, null);
+
+        BufferedImage wallsImg = new BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB);
+        int[] wpix = new int[W * H];
+        for (int y = 0; y < H; y++) {
+            int base = y * W;
+            for (int x = 0; x < W; x++) wpix[base + x] = g.isWall(x, y) ? 0xFF000000 : 0x00000000;
+        }
+        wallsImg.setRGB(0, 0, W, H, wpix, 0, W);
+        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+        g2.drawImage(wallsImg, pad, pad, W, H, null);
 
         // Stats
         g2.setColor(new Color(240, 240, 240));
@@ -185,22 +178,20 @@ public final class GridnessViewer extends JFrame {
         private final LayoutFixture fx;
         private final BuildSim.Mode initialMode;
         private final boolean cycle;
-        private final WallPanel wallPanel;
-        private final HeatmapPanel heatmapPanel;
+        private final FusedPanel fusedPanel;
         private final StatsPanel statsPanel;
         private final Gridness g;
         private final LatencyStats latencyPerTick = new LatencyStats(STATS_WINDOW);
         private final LatencyStats latencyPerCell = new LatencyStats(STATS_WINDOW);
 
         SimThread(LayoutFixture fx, BuildSim.Mode mode, boolean cycle,
-                  WallPanel wallPanel, HeatmapPanel heatmapPanel, StatsPanel statsPanel) {
+                  FusedPanel fusedPanel, StatsPanel statsPanel) {
             super("gridness-sim");
             setDaemon(true);
             this.fx = fx;
             this.initialMode = mode;
             this.cycle = cycle;
-            this.wallPanel = wallPanel;
-            this.heatmapPanel = heatmapPanel;
+            this.fusedPanel = fusedPanel;
             this.statsPanel = statsPanel;
             this.g = new Gridness(fx.width, fx.height, GridnessParams.defaults());
             statsPanel.bind(latencyPerTick, latencyPerCell, g);
@@ -221,11 +212,10 @@ public final class GridnessViewer extends JFrame {
                 latencyPerTick.record(elapsed);
                 if (n > 0) latencyPerCell.record(elapsed / n);
 
-                // Snapshot field + heatmap into the display buffers. Read on the
+                // Snapshot field + heatmap into the display buffer. Read on the
                 // sim thread (the only thread that touches Gridness) and publish
                 // atomically for the EDT.
-                wallPanel.publish(g);
-                heatmapPanel.publish(g);
+                fusedPanel.publish(g);
 
                 // Throttle so the viewer can keep up visually; doing 1000s of
                 // ticks per second gives no human-visible difference.
@@ -247,82 +237,62 @@ public final class GridnessViewer extends JFrame {
 
     // ============================== panels ==============================
 
-    /** Renders the walls boolean grid as a 1bpp BufferedImage. */
-    private static final class WallPanel extends JComponent {
+    /**
+     * Single panel: bilinear-upsampled heatmap painted first, then walls
+     * overlaid on top at full field resolution so structures stay crisp.
+     * Walls use a TYPE_INT_ARGB image so non-wall cells are fully
+     * transparent — the heatmap shows through everywhere except wall
+     * pixels (drawn as opaque black).
+     */
+    private static final class FusedPanel extends JComponent {
         private final int W, H;
-        private final AtomicReference<BufferedImage> img = new AtomicReference<>();
-        private BufferedImage scratch;
-
-        WallPanel(int W, int H) {
-            this.W = W; this.H = H;
-            setPreferredSize(new Dimension(W * CELL_PX, H * CELL_PX));
-            setBackground(Color.WHITE);
-            scratch = new BufferedImage(W, H, BufferedImage.TYPE_INT_RGB);
-        }
-
-        void publish(Gridness g) {
-            BufferedImage local = scratch;
-            int[] pix = ((DataBufferInt) local.getRaster().getDataBuffer()).getData();
-            for (int y = 0; y < H; y++) {
-                int base = y * W;
-                for (int x = 0; x < W; x++) {
-                    pix[base + x] = g.isWall(x, y) ? 0x000000 : 0xFFFFFF;
-                }
-            }
-            // Double-buffer: publish current, get the previous one for next write.
-            BufferedImage prev = img.getAndSet(local);
-            scratch = prev != null ? prev : new BufferedImage(W, H, BufferedImage.TYPE_INT_RGB);
-        }
-
-        @Override
-        protected void paintComponent(Graphics gr) {
-            BufferedImage current = img.get();
-            if (current == null) {
-                gr.setColor(Color.WHITE);
-                gr.fillRect(0, 0, getWidth(), getHeight());
-                return;
-            }
-            gr.drawImage(current, 0, 0, getWidth(), getHeight(), null);
-        }
-    }
-
-    /** Renders the heatmap with a turbo-ish colormap, upscaled to the panel. */
-    private static final class HeatmapPanel extends JComponent {
-        private final int W, H;
-        private final AtomicReference<BufferedImage> img = new AtomicReference<>();
-        private BufferedImage scratch;
         private final int sampleNx, sampleNy;
+        private final AtomicReference<BufferedImage> heatImg = new AtomicReference<>();
+        private final AtomicReference<BufferedImage> wallImg = new AtomicReference<>();
+        private BufferedImage heatScratch;
+        private BufferedImage wallScratch;
 
-        HeatmapPanel(int W, int H) {
+        FusedPanel(int W, int H) {
             this.W = W; this.H = H;
             this.sampleNx = (W + GridnessParams.defaults().sampleStride - 1) / GridnessParams.defaults().sampleStride;
             this.sampleNy = (H + GridnessParams.defaults().sampleStride - 1) / GridnessParams.defaults().sampleStride;
             setPreferredSize(new Dimension(W * CELL_PX, H * CELL_PX));
             setBackground(Color.BLACK);
-            scratch = new BufferedImage(sampleNx, sampleNy, BufferedImage.TYPE_INT_RGB);
+            heatScratch = new BufferedImage(sampleNx, sampleNy, BufferedImage.TYPE_INT_RGB);
+            wallScratch = new BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB);
         }
 
         void publish(Gridness g) {
             double[][] grid = g.readRect(0, 0, W, H);
-            BufferedImage local = scratch;
-            int[] pix = ((DataBufferInt) local.getRaster().getDataBuffer()).getData();
+            BufferedImage heatLocal = heatScratch;
+            int[] hpix = ((DataBufferInt) heatLocal.getRaster().getDataBuffer()).getData();
             int rows = Math.min(grid.length, sampleNy);
             int cols = rows > 0 ? Math.min(grid[0].length, sampleNx) : 0;
             for (int j = 0; j < rows; j++) {
                 int base = j * sampleNx;
                 double[] row = grid[j];
-                for (int i = 0; i < cols; i++) {
-                    pix[base + i] = colormap(row[i]);
+                for (int i = 0; i < cols; i++) hpix[base + i] = colormap(row[i]);
+            }
+            BufferedImage hPrev = heatImg.getAndSet(heatLocal);
+            heatScratch = hPrev != null ? hPrev : new BufferedImage(sampleNx, sampleNy, BufferedImage.TYPE_INT_RGB);
+
+            BufferedImage wallLocal = wallScratch;
+            int[] wpix = ((DataBufferInt) wallLocal.getRaster().getDataBuffer()).getData();
+            for (int y = 0; y < H; y++) {
+                int base = y * W;
+                for (int x = 0; x < W; x++) {
+                    wpix[base + x] = g.isWall(x, y) ? 0xFF000000 : 0x00000000;
                 }
             }
-            BufferedImage prev = img.getAndSet(local);
-            scratch = prev != null ? prev : new BufferedImage(sampleNx, sampleNy, BufferedImage.TYPE_INT_RGB);
+            BufferedImage wPrev = wallImg.getAndSet(wallLocal);
+            wallScratch = wPrev != null ? wPrev : new BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB);
         }
 
         @Override
         protected void paintComponent(Graphics gr) {
-            BufferedImage current = img.get();
-            if (current == null) {
+            BufferedImage heat = heatImg.get();
+            BufferedImage walls = wallImg.get();
+            if (heat == null || walls == null) {
                 gr.setColor(Color.DARK_GRAY);
                 gr.fillRect(0, 0, getWidth(), getHeight());
                 return;
@@ -330,7 +300,10 @@ public final class GridnessViewer extends JFrame {
             Graphics2D g2 = (Graphics2D) gr;
             g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                     RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            g2.drawImage(current, 0, 0, getWidth(), getHeight(), null);
+            g2.drawImage(heat, 0, 0, getWidth(), getHeight(), null);
+            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                    RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+            g2.drawImage(walls, 0, 0, getWidth(), getHeight(), null);
         }
     }
 
@@ -406,9 +379,11 @@ public final class GridnessViewer extends JFrame {
                     sc.meanNs() / 1e6,
                     sc.minNs() / 1e6, sc.p05Ns() / 1e6, sc.p50Ns() / 1e6,
                     sc.p95Ns() / 1e6, sc.p99Ns() / 1e6, sc.maxNs() / 1e6));
+            GridnessParams p = GridnessParams.defaults();
             sim.setText(String.format(
-                    "field=%dx%d  tiles=%d  samples=%d  defaults: tile=32 stride=32 R=30 sampleStride=8",
-                    g.width(), g.height(), g.tileCount(), g.sampleCount()));
+                    "field=%dx%d  tiles=%d  samples=%d  defaults: tile=%d stride=%d hpw=%.0f R=%.0f sampleStride=%d",
+                    g.width(), g.height(), g.tileCount(), g.sampleCount(),
+                    p.tileSize, p.tileStride, p.houghMinPeakWeight, p.radius, p.sampleStride));
         }
     }
 }

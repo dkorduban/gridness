@@ -1,5 +1,8 @@
-"""6-column comparison per layout:
-  walls | Python v3 | Java tile=32 (defaults, fast) | tile=64 hpw=38 | tile=128 hpw=45 | tile=256 (matching)
+"""5-column fused-overlay comparison per layout:
+  Python v3 | Java tile=32 | tile=64 hpw=38 | tile=128 hpw=45 | tile=256
+
+Each panel shows the gridness heatmap with walls overlaid in black, so
+structure and score are visible in one picture.
 
 tile=64/128 hpw values were tuned by sweep_java_params.py to suppress false
 positives on scattered/organic layouts. tile=32 and tile=256 use their
@@ -17,6 +20,7 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 
 from gridness.fixtures import load
+from gridness.viz import walls_overlay_rgba
 
 
 SHARED_CMAP = LinearSegmentedColormap.from_list(
@@ -66,34 +70,33 @@ def main() -> None:
     py_dir = Path("data/layouts_heatmaps_python")
 
     n_rows = len(LAYOUTS)
-    n_cols = 2 + len(JAVA_CONFIGS)
+    n_cols = 1 + len(JAVA_CONFIGS)
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(2.3 * n_cols, 2.4 * n_rows))
 
     summary: dict[str, list[float]] = {label: [] for label, _ in JAVA_CONFIGS}
 
+    def draw_fused(ax, heat, walls_rgba, title, H, W):
+        ax.imshow(heat, cmap=SHARED_CMAP, vmin=0, vmax=1,
+                  interpolation="bilinear", extent=(0, W, H, 0))
+        ax.imshow(walls_rgba, interpolation="nearest", extent=(0, W, H, 0))
+        ax.set_title(title, fontsize=9)
+        ax.set_xticks([]); ax.set_yticks([])
+
     for i, name in enumerate(LAYOUTS):
         fx = load(fx_dir / name)
         H, W = fx.raster.shape
+        walls = fx.raster.astype(bool)
+        walls_rgba = walls_overlay_rgba(walls)
         py = load_heatmap(py_dir / f"{name}.heatmap.txt")
 
-        axes[i, 0].imshow(fx.raster, cmap="gray_r", interpolation="nearest")
-        axes[i, 0].set_title(name, fontsize=9)
-        axes[i, 0].set_xticks([]); axes[i, 0].set_yticks([])
-
-        axes[i, 1].imshow(py, cmap=SHARED_CMAP, vmin=0, vmax=1,
-                          interpolation="bilinear", extent=(0, W, H, 0))
-        axes[i, 1].set_title(f"Python  {py.mean():.2f}", fontsize=9)
-        axes[i, 1].set_xticks([]); axes[i, 1].set_yticks([])
+        draw_fused(axes[i, 0], py, walls_rgba, f"{name}\nPython m={py.mean():.2f}", H, W)
 
         line_parts = [f"{name:28s}  py={py.mean():.3f}"]
         for c, (label, dir_) in enumerate(JAVA_CONFIGS):
             jv = load_heatmap(dir_ / f"{name}.heatmap.txt")
-            ax = axes[i, 2 + c]
-            ax.imshow(jv, cmap=SHARED_CMAP, vmin=0, vmax=1,
-                      interpolation="bilinear", extent=(0, W, H, 0))
             l1 = float(np.mean(np.abs(jv - py)))
-            ax.set_title(f"{label}  m={jv.mean():.2f}  L1={l1:.2f}", fontsize=9)
-            ax.set_xticks([]); ax.set_yticks([])
+            draw_fused(axes[i, 1 + c], jv, walls_rgba,
+                       f"{label}  m={jv.mean():.2f}  L1={l1:.2f}", H, W)
             summary[label].append(l1)
             line_parts.append(f"{label}={jv.mean():.3f}(L1={l1:.3f})")
         print("  " + "  ".join(line_parts))
