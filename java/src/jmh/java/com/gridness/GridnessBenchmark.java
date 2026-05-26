@@ -88,7 +88,7 @@ public class GridnessBenchmark {
      */
     private static GridnessParams paramsFromSysprop() {
         return "true".equalsIgnoreCase(System.getProperty("gridness.bench.matchingConfig"))
-                ? GridnessParams.builder().tileSize(256).tileStride(256).houghMinPeakWeight(30).build()
+                ? GridnessParams.builder().tileSize(128).tileStride(128).houghMinPeakWeight(45).build()
                 : GridnessParams.defaults();
     }
 
