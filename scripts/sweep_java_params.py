@@ -188,15 +188,38 @@ def main() -> None:
         python_heatmap(name)
 
     sweep = []
-    for params, tag in [
-        ({"tileSize": 32, "tileStride": 32, "houghMinPeakWeight": 18, "useGlobalHough": "true"}, "32_global"),
-        ({"tileSize": 32, "tileStride": 32, "houghMinPeakWeight": 18, "useGlobalHough": "false"}, "32_local"),
-        ({"tileSize": 256, "tileStride": 256, "houghMinPeakWeight": 18, "useGlobalHough": "true"}, "256_global"),
-    ]:
+    # Sweep hpw at tile=64 and tile=128, find the value that rejects false
+    # positives on scattered/organic layouts without hurting grid layouts.
+    # Hough max accum in a tile-local Hough scales with tile size (a perfect
+    # line of length T contributes T votes), so hpw should too.
+    configs = []
+    for hpw in [30, 50, 70, 100, 150]:
+        configs.append((64, hpw))
+    for hpw in [30, 60, 100, 150, 220, 300]:
+        configs.append((128, hpw))
+    for tile, hpw in configs:
+        params = {
+            "tileSize": tile, "tileStride": tile,
+            "houghMinPeakWeight": hpw,
+        }
+        tag = f"tile{tile}_hpw{hpw}"
         out_dir = JAVA_TMP / tag
         run_java_dump(out_dir, params)
-        m = score_combo(out_dir, verbose=True)
-        print(f"\n>>> {tag}: {m}")
+        m = score_combo(out_dir)
+        # also pull per-fixture L1 for the problematic 4 + 4 grid reference layouts
+        bad = ["rect_scattered", "rect_rotated_scattered", "organic_walks", "mixed_regions"]
+        good = ["grid_uniform", "dense_grid", "grid_rounded_corners", "hexagonal"]
+        bad_l1 = []; good_l1 = []
+        for n in bad + good:
+            py = python_heatmap(n)
+            jv = _load_text_heatmap(out_dir / f"{n}.heatmap.txt")
+            l1 = float(np.mean(np.abs(jv - py)))
+            (bad_l1 if n in bad else good_l1).append((n, l1, float(jv.mean()), float(py.mean())))
+        avg_bad = np.mean([x[1] for x in bad_l1])
+        avg_good = np.mean([x[1] for x in good_l1])
+        print(f"  tile={tile} hpw={hpw:3d}  overall L1={m.l1:.3f}  bad-L1={avg_bad:.3f}  good-L1={avg_good:.3f}")
+        for n, l1, jvm, pym in bad_l1:
+            print(f"     bad  {n:28s} py={pym:.2f} java={jvm:.2f}  L1={l1:.3f}")
         sweep.append((params, m))
 
     def show(title, key):
