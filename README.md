@@ -417,9 +417,10 @@ scratch on every call. For a live tool, use the Java side.
 
 ## Benchmarks
 
-JMH, JDK 21, WSL2 dev box. 2 × 3 s warmup, 3 × 3 s measurement, fork 1.
-"Build tick" = `applyBatch` of ~30 cells (3 in-progress buildings × ~10
-workers each) + a forced `valueAt` to drive `ensureClean`.
+JMH, JDK 21, WSL2, on a 13th Gen Intel Core i9-13900H @ 2.60 GHz.
+2 × 3 s warmup, 3 × 3 s measurement, fork 1. "Build tick" =
+`applyBatch` of ~30 cells (3 in-progress buildings × ~10 workers each)
++ a forced `valueAt` to drive `ensureClean`.
 
 ### `balanced` preset — default (`tileSize=128 hpw=45`)
 
